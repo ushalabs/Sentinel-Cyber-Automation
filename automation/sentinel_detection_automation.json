@@ -1,0 +1,242 @@
+{
+  "name": "Sentinel Detection Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sentinel-detection",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -416,
+        0
+      ],
+      "id": "9fe1ab84-c330-4c16-af5a-4a88d44e037d",
+      "name": "Webhook",
+      "webhookId": "f88d5c0c-9524-440e-9507-9184c384ef5f"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "7dd69718-9c77-4a9a-af61-cbf6a25f7252",
+              "leftValue": "={{ $json.body.attack }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -192,
+        0
+      ],
+      "id": "9cd00bd7-ff5e-4f70-b5c7-812ca26df917",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cc7d2e02-362a-413b-91b2-8d0298674986",
+              "name": "status",
+              "value": "CRITICAL",
+              "type": "string"
+            },
+            {
+              "id": "dae8e8ce-078b-48d0-9e82-fc28f7831aa9",
+              "name": "message",
+              "value": "Sentinel detected malicious network traffic",
+              "type": "string"
+            },
+            {
+              "id": "16517bee-a665-486b-ac6e-b84337e371cb",
+              "name": "detection_id",
+              "value": "={{ $json.body.detection_id }}",
+              "type": "number"
+            },
+            {
+              "id": "a5f186b1-abef-4d05-a2dc-93d3c00c35f7",
+              "name": "model",
+              "value": "={{ $json.body.model }}",
+              "type": "string"
+            },
+            {
+              "id": "9105e14c-2152-4ff1-a2e8-4b2104c8301b",
+              "name": "confidence",
+              "value": "={{ $json.body.confidence }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        112,
+        -80
+      ],
+      "id": "f124bb51-7254-42ed-b628-18af3bb392e6",
+      "name": "Prepare Attack Alert"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "172459eb-54b6-4b11-a6d2-905d1a4be833",
+              "name": "status",
+              "value": "SAFE",
+              "type": "string"
+            },
+            {
+              "id": "93311000-9a28-48b4-bb60-78fffa2ada15",
+              "name": "message",
+              "value": "Sentinel classified traffic as benign",
+              "type": "string"
+            },
+            {
+              "id": "df95c4e0-e7f3-4b0b-97a8-0a8e0300a9a1",
+              "name": "detection_id",
+              "value": "={{ $json.body.detection_id }}",
+              "type": "number"
+            },
+            {
+              "id": "50193c6d-f235-459a-9271-461fcb9f1b6b",
+              "name": "model",
+              "value": "={{ $json.body.model }}",
+              "type": "string"
+            },
+            {
+              "id": "49ea0382-3a9f-4bcc-8867-ad33ef9c4d97",
+              "name": "confidence",
+              "value": "={{ $json.body.confidence }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        112,
+        80
+      ],
+      "id": "80ee2d3e-a45a-488e-aef3-3d6e692075e2",
+      "name": "Prepare Benign Result"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        288,
+        -208
+      ],
+      "id": "87e826c4-b54f-4e25-81ca-6c60503fc88c",
+      "name": "Respond to Webhook (Attack)"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        288,
+        192
+      ],
+      "id": "c5e0666a-d5f6-4b97-b228-8ca11c9f5092",
+      "name": "Respond to Webhook (Bening)"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Prepare Attack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Benign Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Attack Alert": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook (Attack)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Benign Result": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook (Bening)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "dd9577d4-5455-45e8-b910-461e8ae11850",
+  "meta": {
+    "instanceId": "a1b971ccd542966bf98edc508aa5ffb232b59afc6dd293657cfd10c7dda0468d"
+  },
+  "nodeGroups": [],
+  "id": "BE9f63mMgYSEBhS9",
+  "tags": []
+}

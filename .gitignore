@@ -1,0 +1,37 @@
+# -----------------------------
+# Python
+# -----------------------------
+backend/venv/
+**/__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+# -----------------------------
+# Secrets
+# -----------------------------
+backend/.env
+
+# -----------------------------
+# Dataset
+# -----------------------------
+Dataset/CIC-IDS2017.zip
+
+# -----------------------------
+# Large ML artifacts
+# -----------------------------
+ML Models/KNN/sentinel_knn_binary_v1.joblib
+ML Models/Random Forest/sentinel_random_forest_binary_v1.joblib
+
+# -----------------------------
+# IDE / OS
+# -----------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# -----------------------------
+# Logs
+# -----------------------------
+*.log
