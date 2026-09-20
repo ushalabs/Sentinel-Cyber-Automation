@@ -1,7 +1,7 @@
-﻿# Sentinel — Phase 06: Threat Intelligence Enrichment
+# Sentinel - Phase 06: Threat Intelligence Enrichment
 
 **Project:** Sentinel
-**Phase:** 6 — Threat Intelligence Enrichment
+**Phase:** 6 - Threat Intelligence Enrichment
 **Status:** Complete
 **Completed:** September 2026
 
@@ -19,26 +19,24 @@ Before this phase, Sentinel could:
 - trigger an n8n workflow
 - route ATTACK and BENIGN events into separate automation branches
 
-The goal of Phase 6 was to attach real threat-intelligence context to suspicious network traffic without changing the trained XGBoost model or its 77-feature contract.
+The goal of Phase 6 was to attach external threat-intelligence context to suspicious network traffic without changing the trained XGBoost model or its 77-feature contract.
 
-The completed architecture now supports:
+The completed phase adds:
 
-- network metadata alongside ML features
+- network metadata beside the ML feature vector
 - source/destination IP and port persistence
 - AbuseIPDB source-IP reputation checks
-- enriched incident generation inside n8n
+- enriched incident generation in n8n
 - threat-intelligence write-back to PostgreSQL
-- protection against attaching enrichment to BENIGN detections
+- a guard that prevents enrichment of BENIGN detections
 
 ---
 
 ## 2. Key Design Decision: ML Features vs Network Metadata
 
-The XGBoost model was trained using exactly 77 numeric CIC-IDS2017 features.
+The production model still receives exactly 77 numeric features.
 
-Those features were intentionally left unchanged.
-
-Network context was added separately through a metadata object:
+Network identifiers are carried separately:
 
 ```json
 {
@@ -56,7 +54,7 @@ Network context was added separately through a metadata object:
 }
 ```
 
-This separation is important:
+Conceptually:
 
 ```text
 77 ML Features
@@ -98,15 +96,13 @@ class PredictionRequest(BaseModel):
     metadata: NetworkMetadata | None = None
 ```
 
-Metadata was made optional so older clients and the existing test script would continue to work.
-
-Backward compatibility was verified successfully.
+Metadata is optional so existing clients remain compatible.
 
 ---
 
 ## 4. PostgreSQL Metadata Expansion
 
-The existing `detections` table was expanded with six nullable columns:
+The `detections` table was expanded with six nullable columns:
 
 ```sql
 ALTER TABLE detections
@@ -118,46 +114,37 @@ ADD COLUMN transport_protocol VARCHAR(20),
 ADD COLUMN observed_at TIMESTAMPTZ;
 ```
 
-`VARCHAR(45)` was used for IP addresses so both IPv4 and IPv6 can be supported.
+`VARCHAR(45)` supports both IPv4 and IPv6 text representations.
 
 `observed_at` represents when the network event was observed, while `created_at` represents when Sentinel stored the detection.
 
-The SQLAlchemy `Detection` model was updated with matching nullable fields using SQLAlchemy 2 typed mappings.
+### Validation evidence
 
-Existing records remained valid and showed `NULL` for the new metadata fields.
+The metadata test record stored all six new values successfully:
+
+![Network metadata persisted in PostgreSQL](assets/phase-06/01_metadata_persistence.png)
 
 ---
 
-## 5. Metadata Persistence
+## 5. Metadata Persistence in `/predict`
 
-The `/predict` route was updated so incoming metadata is stored with each detection.
+The `/predict` route now stores incoming metadata with the detection.
 
-Conceptually:
+Example:
 
 ```python
 source_ip=request.metadata.source_ip if request.metadata else None
 ```
 
-The same approach was used for destination IP, source/destination ports, protocol, and observed time.
+The same pattern is used for destination IP, ports, protocol, and observation time.
 
-A test prediction containing metadata successfully created a PostgreSQL record containing:
-
-```text
-source_ip          203.0.113.50
-destination_ip     192.168.1.10
-source_port        51542
-destination_port   22
-transport_protocol TCP
-observed_at         2026-09-20 13:05:00+05
-```
+This keeps metadata optional while allowing richer detections when a real network collector is added later.
 
 ---
 
 ## 6. FastAPI to n8n Metadata Transport
 
-`backend/app/services/automation.py` was extended so the n8n webhook receives both the prediction result and the network metadata.
-
-The automation payload now includes:
+`backend/app/services/automation.py` was extended so n8n receives:
 
 ```text
 detection_id
@@ -173,17 +160,15 @@ transport_protocol
 observed_at
 ```
 
-The datetime is converted using `isoformat()` before being sent as JSON.
-
-A production-style n8n execution confirmed that the complete metadata object arrived successfully.
+The observation timestamp is serialized with `isoformat()` before being sent as JSON.
 
 ---
 
 ## 7. Threat Intelligence Provider
 
-AbuseIPDB was selected as the first threat-intelligence provider for Sentinel.
+AbuseIPDB was selected as Sentinel's first threat-intelligence provider.
 
-The API key is stored using n8n Credentials rather than hardcoded into source code or the exported workflow.
+The API key is stored in n8n Credentials rather than hardcoded into source code or the exported workflow.
 
 The n8n HTTP Request node is named:
 
@@ -191,33 +176,24 @@ The n8n HTTP Request node is named:
 Check Source IP Reputation
 ```
 
-It performs:
+It performs a lookup using the source IP and returns reputation context such as:
 
 ```text
-GET https://api.abuseipdb.com/api/v2/check
+abuseConfidenceScore
+isWhitelisted
+countryName
+isp
+domain
+usageType
+totalReports
+lastReportedAt
 ```
-
-with:
-
-```text
-ipAddress    = source_ip
-maxAgeInDays = 90
-verbose      = true
-```
-
-and:
-
-```text
-Accept: application/json
-```
-
-The API key is sent securely through the configured n8n Header Auth credential.
 
 ---
 
 ## 8. Updated n8n ATTACK Branch
 
-The ATTACK path became:
+The ATTACK branch now performs threat-intelligence enrichment before responding:
 
 ```text
 Webhook
@@ -238,33 +214,24 @@ Save Threat Intelligence
 Respond to Webhook (Attack)
 ```
 
-The BENIGN path remains:
+The BENIGN branch remains separate and does not call AbuseIPDB.
 
-```text
-Webhook
-   |
-   v
-IF attack == false
-   |
-   v
-Prepare Benign Result
-   |
-   v
-Respond to Webhook (Benign)
-```
+### Validation evidence
 
-Only ATTACK events perform the AbuseIPDB lookup.
+The published ATTACK workflow completed through the enrichment and persistence nodes:
+
+![Published n8n ATTACK enrichment workflow](assets/phase-06/02_attack_workflow.png)
 
 ---
 
 ## 9. Enriched Incident Object
 
-The `Prepare Attack Alert` node combines two data sources:
+`Prepare Attack Alert` combines two sources:
 
-1. original Sentinel detection data from the Webhook node
-2. AbuseIPDB threat-intelligence output
+1. the original Sentinel webhook event
+2. the current AbuseIPDB response
 
-Original event values are referenced from:
+Original event values are referenced with:
 
 ```text
 $('Webhook').item.json.body...
@@ -276,7 +243,7 @@ Threat-intelligence values are read from:
 $json.data...
 ```
 
-The resulting enriched object contains:
+The enriched incident contains:
 
 ```text
 status
@@ -300,46 +267,19 @@ total_reports
 last_reported_at
 ```
 
-This was the first complete enrichment stage in Sentinel.
+### Validation evidence
+
+A controlled ATTACK integration test returned the full enriched incident:
+
+![Enriched CRITICAL webhook response](assets/phase-06/03_enriched_attack_response.png)
+
+The test used `8.8.8.8` only as a public-IP integration target. The returned reputation showed a whitelist result and an abuse confidence score of 0, so Sentinel was not treating Google DNS itself as a real attacker. The `CRITICAL` state came from the intentionally fabricated ATTACK event used to validate the pipeline.
 
 ---
 
-## 10. AbuseIPDB Validation
+## 10. Threat-Intelligence Persistence Design
 
-A controlled test event used the public IP:
-
-```text
-8.8.8.8
-```
-
-This was used only to validate the integration and was not treated as a real attacker.
-
-The returned AbuseIPDB data included:
-
-```text
-IP Address              8.8.8.8
-Public                   true
-IP Version               4
-Whitelisted              true
-Abuse Confidence Score   0
-Country                  United States of America
-ISP                      Google LLC
-Domain                   google.com
-Usage Type               Content Delivery Network
-Total Reports            203
-```
-
-This test also demonstrated an important security-analysis concept:
-
-> The number of historical reports alone should not be treated as proof that an IP is malicious.
-
-The returned whitelist status and abuse confidence score provide important additional context.
-
----
-
-## 11. Threat-Intelligence Persistence Design
-
-Instead of creating a database column for every AbuseIPDB property, Sentinel stores provider-specific intelligence as JSONB.
+Instead of creating one SQL column for every provider property, provider-specific enrichment is stored as JSONB.
 
 Three columns were added:
 
@@ -350,25 +290,23 @@ ADD COLUMN threat_intelligence JSONB,
 ADD COLUMN enriched_at TIMESTAMPTZ;
 ```
 
-This design avoids tightly coupling Sentinel to a single threat-intelligence provider.
-
 Conceptually:
 
 ```text
 Detection
-├── ML Result
-├── Network Metadata
-└── Threat Intelligence
-    ├── threat_provider
-    ├── threat_intelligence JSONB
-    └── enriched_at
+|-- ML Result
+|-- Network Metadata
+`-- Threat Intelligence
+    |-- threat_provider
+    |-- threat_intelligence JSONB
+    `-- enriched_at
 ```
 
-Future providers such as VirusTotal or OTX can use the same architecture without requiring a database redesign.
+This allows future threat-intelligence providers to use the same persistence structure without another database redesign.
 
 ---
 
-## 12. Threat Enrichment API
+## 11. Threat Enrichment API
 
 A new request schema was added:
 
@@ -378,29 +316,27 @@ class ThreatEnrichmentRequest(BaseModel):
     threat_intelligence: dict
 ```
 
-A new FastAPI endpoint was created:
+A new endpoint was created:
 
 ```text
 POST /detections/{detection_id}/enrichment
 ```
 
-Its responsibilities are:
+The endpoint:
 
-1. locate the requested detection
-2. reject missing detections with `404`
-3. reject BENIGN detections with `400`
-4. save the threat provider
-5. save the threat-intelligence JSON
-6. store the enrichment timestamp
-7. commit the PostgreSQL transaction
-
-The endpoint returns the saved enrichment record after success.
+1. locates the detection
+2. returns `404` if it does not exist
+3. rejects BENIGN detections
+4. saves the provider name
+5. saves the enrichment JSONB
+6. stores an enrichment timestamp
+7. commits the update
 
 ---
 
-## 13. BENIGN Safety Guard
+## 12. BENIGN Safety Guard
 
-A safety rule was added:
+The enrichment endpoint includes:
 
 ```python
 if not detection.attack:
@@ -410,43 +346,31 @@ if not detection.attack:
     )
 ```
 
-This prevents threat intelligence from being accidentally attached to benign records.
+This prevents accidental threat enrichment of benign records.
 
-The guard was explicitly tested against a known BENIGN detection.
+### Validation evidence
 
-Expected result:
+The guard correctly rejected an enrichment request for a BENIGN detection:
 
-```text
-400 Bad Request
-```
-
-with:
-
-```json
-{
-  "detail": "Threat intelligence enrichment is only allowed for ATTACK detections"
-}
-```
-
-The test passed.
+![BENIGN enrichment guard returning 400](assets/phase-06/05_benign_guard.png)
 
 ---
 
-## 14. n8n Write-Back to FastAPI
+## 13. n8n Write-Back to FastAPI
 
-A new n8n HTTP Request node was added:
+A new n8n node named:
 
 ```text
 Save Threat Intelligence
 ```
 
-It calls:
+calls:
 
 ```text
 POST http://127.0.0.1:8000/detections/{detection_id}/enrichment
 ```
 
-with:
+with a body similar to:
 
 ```json
 {
@@ -464,7 +388,7 @@ with:
 }
 ```
 
-This completed the circular pipeline:
+This completes the circular pipeline:
 
 ```text
 FastAPI
@@ -488,96 +412,70 @@ FastAPI Enrichment Endpoint
 PostgreSQL Update
 ```
 
+### Validation evidence
+
+The controlled ATTACK row was updated with `AbuseIPDB`, a populated JSONB object, and an enrichment timestamp:
+
+![Threat intelligence written back to PostgreSQL](assets/phase-06/04_postgres_enrichment_writeback.png)
+
 ---
 
-## 15. Rich Webhook Response
+## 14. Rich Webhook Response
 
-After adding the database write-back node, the attack webhook initially returned only the FastAPI persistence response.
+After introducing the persistence node, the final webhook initially returned only the database-save response.
 
-The Respond to Webhook node was therefore changed to return the output of:
-
-```text
-Prepare Attack Alert
-```
-
-using:
+`Respond to Webhook (Attack)` was changed to return:
 
 ```text
 {{ $('Prepare Attack Alert').item.json }}
 ```
 
-This allows Sentinel to:
-
-1. save the threat intelligence to PostgreSQL
-2. still return the full enriched CRITICAL incident to the caller
-
-A successful response contained:
-
-```text
-status                  CRITICAL
-detection_id            9
-model                   XGBoost
-confidence              0.99
-source_ip               8.8.8.8
-destination_ip          192.168.1.10
-source_port             51542
-destination_port        22
-transport_protocol      TCP
-abuse_confidence_score  0
-is_whitelisted          True
-country                 United States of America
-isp                     Google LLC
-domain                  google.com
-usage_type              Content Delivery Network
-total_reports           203
-```
+This allows the workflow to save enrichment first while still returning the complete CRITICAL incident to the caller.
 
 ---
 
-## 16. Production Validation
+## 15. Production Validation
 
-A controlled ATTACK database record was created specifically for integration validation.
+A controlled ATTACK database row was created specifically for integration testing.
 
 It was not presented as a real model detection.
 
-The record used:
+The published production endpoint was then called:
 
 ```text
-prediction          ATTACK
-attack              true
-confidence          0.99
-source_ip           8.8.8.8
-destination_ip      192.168.1.10
-source_port         51542
-destination_port    22
-transport_protocol  TCP
+POST /webhook/sentinel-detection
 ```
 
-The published production webhook was then called:
+The production ATTACK flow completed successfully:
 
 ```text
-POST http://localhost:5678/webhook/sentinel-detection
+Published n8n workflow
+        |
+        v
+AbuseIPDB
+        |
+        v
+Prepare enriched incident
+        |
+        v
+FastAPI enrichment endpoint
+        |
+        v
+PostgreSQL update
+        |
+        v
+Rich CRITICAL response
 ```
 
-The complete ATTACK branch executed successfully.
-
-PostgreSQL confirmed that the same ATTACK record was updated with:
-
-```text
-threat_provider      AbuseIPDB
-threat_intelligence  populated JSONB
-enriched_at          populated timestamp
-```
-
-The temporary controlled ATTACK record was deleted after validation.
+After validation, the temporary ATTACK record was deleted.
 
 ---
 
-## 17. BENIGN Regression Test
+## 16. BENIGN Regression Test
 
-The original model-serving test was run again after all Phase 6 changes.
+The original prediction test was run again after all Phase 6 changes.
 
-Result:
+The model returned:
 
 ```text
 prediction             BENIGN
@@ -586,42 +484,25 @@ automation_triggered   true
 automation_result      SAFE
 ```
 
-n8n correctly executed only:
+The n8n execution followed only the BENIGN branch.
 
-```text
-Webhook
-   |
-   v
-IF
-   |
-   v FALSE
-Prepare Benign Result
-   |
-   v
-Respond to Webhook (Benign)
-```
+### Validation evidence
 
-The AbuseIPDB and threat-intelligence persistence nodes did not execute.
+The AbuseIPDB and persistence nodes were not executed:
 
-PostgreSQL confirmed:
+![BENIGN workflow bypasses threat enrichment](assets/phase-06/06_benign_workflow.png)
 
-```text
-threat_provider      NULL
-threat_intelligence  NULL
-enriched_at          NULL
-```
+The newest BENIGN database row also contained no threat enrichment:
 
-for the new BENIGN detection.
+![BENIGN detection has no threat intelligence](assets/phase-06/07_benign_database.png)
 
-This confirmed that Phase 6 did not break the Phase 1–5 BENIGN pipeline.
+This confirms that Phase 6 did not break the existing BENIGN pipeline.
 
 ---
 
-## 18. Final Phase 6 Architecture
+## 17. Final Phase 6 Architecture
 
 ```text
-                         Sentinel Phase 6
-
                     Network Flow / Event
                             |
                   +---------+---------+
@@ -673,9 +554,9 @@ This confirmed that Phase 6 did not break the Phase 1–5 BENIGN pipeline.
 
 ---
 
-## 19. Files Modified in Phase 6
+## 18. Files Modified in Phase 6
 
-Main backend changes:
+Backend:
 
 ```text
 backend/app/main.py
@@ -690,23 +571,16 @@ Automation:
 automation/sentinel_detection_automation.json
 ```
 
-Database:
-
-```text
-detections table expanded with network metadata and threat-intelligence persistence
-```
-
 Documentation:
 
 ```text
 docs/Sentinel_Phase_06_Threat_Intelligence_Enrichment.md
+docs/assets/phase-06/
 ```
 
 ---
 
-## 20. Major Concepts Learned
-
-Phase 6 introduced several important backend and cybersecurity concepts:
+## 19. Major Concepts Learned
 
 ### Optional Types
 
@@ -714,7 +588,7 @@ Phase 6 introduced several important backend and cybersecurity concepts:
 str | None
 ```
 
-A value can contain a string or be absent.
+A value may contain a string or be absent.
 
 ### Conditional Expressions
 
@@ -726,22 +600,15 @@ Used to safely handle optional metadata.
 
 ### Named Function Arguments
 
-```python
-send_detection_to_n8n(
-    source_ip=detection.source_ip,
-    ...
-)
-```
-
-Makes larger function calls easier to understand and safer to maintain.
+Named arguments make larger function calls easier to read and harder to mix up.
 
 ### JSONB
 
-PostgreSQL JSONB allows flexible structured threat-intelligence data without requiring a separate database column for every provider field.
+PostgreSQL JSONB stores structured provider-specific data without requiring one SQL column per property.
 
 ### HTTP APIs
 
-Sentinel now performs both:
+Sentinel now uses both:
 
 ```text
 GET  -> query external threat intelligence
@@ -750,84 +617,67 @@ POST -> persist enrichment back into FastAPI
 
 ### Data Enrichment
 
-Data enrichment combines an original event with additional external context.
+The original detection is combined with external reputation context.
 
 ### Defensive Validation
 
-The enrichment endpoint validates that only ATTACK detections can receive threat-intelligence data.
+The enrichment endpoint refuses to enrich BENIGN detections.
 
 ### Separation of Concerns
 
-ML features, network metadata, automation data, and threat intelligence are kept logically separate.
+ML features, network metadata, automation data, and threat intelligence remain logically separate.
 
 ---
 
-## 21. Issues Encountered
+## 20. Issues Encountered
 
-### Swagger Feature Placeholders
+### Swagger feature placeholders
 
-Because prediction features use:
+Because features are defined as:
 
 ```python
 dict[str, float]
 ```
 
-Swagger displays generic `additionalProp` fields instead of all 77 feature names.
+Swagger shows generic property placeholders rather than all 77 feature names.
 
-This does not affect model inference.
+This does not affect inference.
 
-### Python Syntax / Indentation Errors
+### Python syntax and indentation
 
-Minor syntax issues occurred while extending the detection model and enrichment endpoint, including:
+Small syntax issues were encountered during development, including a missing comma and an indentation error. Both were corrected and Uvicorn reloaded normally.
 
-- a missing comma
-- incorrect indentation under an `if` statement
+### n8n test vs production webhooks
 
-These were corrected and FastAPI reloaded successfully.
-
-### Test vs Production n8n Webhooks
-
-n8n uses different routes:
+n8n uses:
 
 ```text
 /webhook-test/...
 ```
 
-for editor test executions and:
+for editor testing and:
 
 ```text
 /webhook/...
 ```
 
-for published production executions.
+for published production execution.
 
-Using the production URL while testing an unpublished draft initially executed the older workflow version.
+Using the production URL before publishing the updated draft initially executed the older workflow version.
 
-### Workflow Data Context
+### Workflow data context
 
-After the HTTP Request node, `$json` referred to the AbuseIPDB response rather than the original webhook body.
+After the AbuseIPDB HTTP Request node, `$json` referred to the AbuseIPDB response rather than the original webhook body.
 
-The original detection data was therefore accessed explicitly with:
+The original detection data was therefore referenced explicitly through the `Webhook` node.
 
-```text
-$('Webhook').item.json.body...
-```
+### Persistence node changed the response
 
-### Write-Back Response Replaced Rich Alert
-
-Adding the persistence node caused the final webhook to return the database-save response.
-
-The Respond to Webhook node was changed to return:
-
-```text
-$('Prepare Attack Alert').item.json
-```
-
-instead.
+Adding `Save Threat Intelligence` caused the final webhook to return the persistence response. The Respond node was adjusted to return the earlier enriched incident instead.
 
 ---
 
-## 22. Phase 6 Outcome
+## 21. Phase 6 Outcome
 
 Phase 6 is complete.
 
@@ -837,7 +687,7 @@ Sentinel now supports:
 - source/destination IP tracking
 - source/destination port tracking
 - protocol and observation timestamp persistence
-- ATTACK-only external IP reputation checks
+- ATTACK-only source-IP reputation checks
 - AbuseIPDB integration
 - enriched security incidents
 - threat-intelligence JSONB persistence
@@ -845,48 +695,32 @@ Sentinel now supports:
 - enrichment timestamps
 - a dedicated enrichment API endpoint
 - protection against enriching BENIGN detections
-- a validated production n8n workflow
+- a validated published n8n workflow
 - BENIGN regression compatibility
 
-Sentinel has therefore moved beyond pure ML classification into an actual security automation and enrichment pipeline.
+Sentinel has moved beyond pure ML classification into a security automation and threat-enrichment pipeline.
 
 ---
 
-## 23. Transition to Phase 7
+## 22. Transition to Phase 7
 
 The next phase is:
 
 ```text
-Phase 7 — LLM Incident Analysis
+Phase 7 - LLM Incident Analysis
 ```
 
-Phase 7 will use the richer incident data produced by Phase 6 so an LLM can reason over information such as:
+Phase 7 will use the enriched incident object as context for LLM-assisted analysis, including:
 
 ```text
 ML prediction
 confidence
-source/destination context
-ports
-protocol
-AbuseIPDB reputation
-ISP
+network metadata
+source IP reputation
 country
+ISP
 domain
 report history
 ```
 
-Instead of receiving only:
-
-```text
-ATTACK — 99% confidence
-```
-
-the analysis layer will receive a structured incident with technical context.
-
-This creates the foundation for later:
-
-```text
-Phase 8 — Human Approval & Automated Response
-Phase 9 — Real-Time Detection System & Dashboard
-Phase 10 — Full Validation & Deployment Readiness
-```
+This creates the foundation for later human approval and automated response workflows.
