@@ -14,14 +14,26 @@ def send_detection_to_n8n(
     prediction: str,
     attack: bool,
     confidence: float,
-    model: str
+    model: str,
+    source_ip=None,
+    destination_ip=None,
+    source_port=None,
+    destination_port=None,
+    transport_protocol=None,
+    observed_at=None,
 ):
     payload = {
         "detection_id": detection_id,
         "prediction": prediction,
         "attack": attack,
         "confidence": confidence,
-        "model": model
+        "model": model,
+        "source_ip": source_ip,
+        "destination_ip": destination_ip,
+        "source_port": source_port,
+        "destination_port": destination_port,
+        "transport_protocol": transport_protocol,
+        "observed_at": observed_at.isoformat() if observed_at else None,
     }
 
     response = httpx.post(

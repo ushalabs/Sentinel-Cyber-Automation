@@ -1,8 +1,8 @@
-﻿# Sentinel
+# Sentinel
 
-Sentinel is an end-to-end intrusion detection and automated incident-response platform built around machine learning, FastAPI, PostgreSQL, n8n, and future threat-intelligence / LLM enrichment.
+Sentinel is an end-to-end network intrusion detection and cybersecurity automation platform built around machine learning, FastAPI, PostgreSQL, n8n, and external threat intelligence.
 
-The project began as a binary network intrusion classifier and is being expanded phase-by-phase into a complete detection, persistence, automation, and response system.
+The project began as a binary network intrusion classifier and is being expanded phase-by-phase into a complete detection, persistence, enrichment, analysis, and response system.
 
 ---
 
@@ -10,16 +10,16 @@ The project began as a binary network intrusion classifier and is being expanded
 
 | Phase | Description | Status |
 |---|---|---|
-| 1 | ML Training & Evaluation | âœ… Complete |
-| 2 | FastAPI Model Serving | âœ… Complete |
-| 3 | PostgreSQL Persistence | âœ… Complete |
-| 4 | n8n Automation Foundation | âœ… Complete |
-| 5 | FastAPI â†’ n8n Integration | âœ… Complete |
-| 6 | Threat Intelligence Enrichment | â³ Next |
-| 7 | LLM Incident Analysis | â¬œ Planned |
-| 8 | Human Approval & Automated Response | â¬œ Planned |
-| 9 | Real-Time Detection System & Dashboard | â¬œ Planned |
-| 10 | Full Validation & Deployment Readiness | â¬œ Planned |
+| 1 | ML Training & Evaluation | Complete |
+| 2 | FastAPI Model Serving | Complete |
+| 3 | PostgreSQL Persistence | Complete |
+| 4 | n8n Automation Foundation | Complete |
+| 5 | FastAPI -> n8n Integration | Complete |
+| 6 | Threat Intelligence Enrichment | Complete |
+| 7 | LLM Incident Analysis | Next |
+| 8 | Human Approval & Automated Response | Planned |
+| 9 | Real-Time Detection System & Dashboard | Planned |
+| 10 | Full Validation & Deployment Readiness | Planned |
 
 ---
 
@@ -29,48 +29,77 @@ Sentinel can currently:
 
 - load a trained XGBoost intrusion-detection model
 - accept a 77-feature network-flow payload through FastAPI
+- accept optional network metadata alongside the ML feature vector
 - classify traffic as `BENIGN` or `ATTACK`
 - return attack probability and confidence
 - persist detections in PostgreSQL
 - preserve the original 77-feature payload as JSONB
+- store source/destination IPs, ports, protocol, and observation time
 - retrieve detection history
 - retrieve individual detections by ID
 - filter detections by attack status
 - automatically trigger a published n8n workflow after prediction
-- route ATTACK and BENIGN events through different automation branches
-- return the n8n automation result back through FastAPI
+- route ATTACK and BENIGN events through separate automation branches
+- enrich ATTACK detections with AbuseIPDB source-IP reputation data
+- persist threat-intelligence results back into PostgreSQL
+- prevent threat enrichment from being attached to BENIGN detections
+- return an enriched CRITICAL incident response for ATTACK events
+- return a SAFE automation response for BENIGN events
 
 ---
 
 ## Current Architecture
 
 ```text
-77-Feature Network Input
-        â†“
-POST /predict
-        â†“
-FastAPI
-        â†“
-XGBoost
-        â†“
-BENIGN / ATTACK
-        â†“
-PostgreSQL
-        â†“
-Detection Record
-        â†“
-FastAPI â†’ n8n Webhook
-        â†“
-IF attack?
-   â†™        â†˜
- TRUE      FALSE
-  â†“          â†“
-CRITICAL     SAFE
-  â†“          â†“
-Automation Response
-        â†“
-FastAPI Response
+                 Network Flow / Event
+                         |
+              +----------+----------+
+              |                     |
+              v                     v
+      77 ML Features          Network Metadata
+              |              IPs, ports, protocol,
+              |                 observed time
+              +----------+----------+
+                         |
+                         v
+                      FastAPI
+                         |
+                         v
+                      XGBoost
+                         |
+                         v
+                 BENIGN / ATTACK
+                         |
+                         v
+                    PostgreSQL
+                         |
+                         v
+                        n8n
+                         |
+                  attack == true?
+                    /         \
+                  NO           YES
+                  |             |
+                  v             v
+                SAFE      AbuseIPDB Lookup
+                                |
+                                v
+                       Enriched Incident
+                                |
+                                v
+                    Save Threat Intelligence
+                                |
+                                v
+                              FastAPI
+                                |
+                                v
+                           PostgreSQL
+                                |
+                                v
+                    Rich CRITICAL Response
 ```
+
+The 77-feature XGBoost contract remains unchanged. Network identifiers are handled as metadata and are not fed into the model.
 
 ---
 
@@ -99,11 +128,12 @@ FastAPI Response
 - psycopg
 - JSONB
 
-### Automation
+### Automation & Threat Intelligence
 - n8n
 - Webhooks
 - Conditional routing
 - HTTP integrations
+- AbuseIPDB
 
 ### Development / Tooling
 - Python virtual environments
@@ -120,8 +150,8 @@ Sentinel Phase 1 used the CIC-IDS2017 dataset for binary intrusion detection.
 Binary labels:
 
 ```text
-BENIGN â†’ 0
-ATTACK â†’ 1
+BENIGN -> 0
+ATTACK -> 1
 ```
 
 The final production feature contract contains **77 numeric network-flow features**.
@@ -147,56 +177,57 @@ ML Models/XGBoost/sentinel_xgboost_binary_v1.json
 
 ```text
 Sentinel/
-â”œâ”€â”€ .gitignore
-â”œâ”€â”€ README.md
-â”‚
-â”œâ”€â”€ Dataset/
-â”‚   â””â”€â”€ Dataset_README.md
-â”‚
-â”œâ”€â”€ ML Models/
-â”‚   â”œâ”€â”€ CNN/
-â”‚   â”‚   â”œâ”€â”€ 04_CICIDS2017_CNN.ipynb
-â”‚   â”‚   â”œâ”€â”€ sentinel_cnn_binary_v1_best.keras
-â”‚   â”‚   â”œâ”€â”€ sentinel_cnn_scaler_v1.joblib
-â”‚   â”‚   â””â”€â”€ sentinel_feature_columns_v1.joblib
-â”‚   â”‚
-â”‚   â”œâ”€â”€ KNN/
-â”‚   â”‚   â”œâ”€â”€ 03_CICIDS2017_KNN.ipynb
-â”‚   â”‚   â”œâ”€â”€ KNN_README.md
-â”‚   â”‚   â”œâ”€â”€ sentinel_knn_scaler_v1.joblib
-â”‚   â”‚   â””â”€â”€ sentinel_feature_columns_v1.joblib
-â”‚   â”‚
-â”‚   â”œâ”€â”€ Random Forest/
-â”‚   â”‚   â”œâ”€â”€ 01_CICIDS2017_RandomForest.ipynb
-â”‚   â”‚   â”œâ”€â”€ README.md
-â”‚   â”‚   â””â”€â”€ sentinel_feature_columns_v1.joblib
-â”‚   â”‚
-â”‚   â””â”€â”€ XGBoost/
-â”‚       â”œâ”€â”€ 02_CICIDS2017_XGBoost.ipynb
-â”‚       â”œâ”€â”€ sentinel_xgboost_binary_v1.json
-â”‚       â””â”€â”€ sentinel_feature_columns_v1.joblib
-â”‚
-â”œâ”€â”€ backend/
-â”‚   â”œâ”€â”€ app/
-â”‚   â”‚   â”œâ”€â”€ main.py
-â”‚   â”‚   â”œâ”€â”€ database.py
-â”‚   â”‚   â”œâ”€â”€ models.py
-â”‚   â”‚   â””â”€â”€ services/
-â”‚   â”‚       â””â”€â”€ automation.py
-â”‚   â”‚
-â”‚   â”œâ”€â”€ test_prediction.py
-â”‚   â”œâ”€â”€ test_n8n_connection.py
-â”‚   â””â”€â”€ .gitignore
-â”‚
-â”œâ”€â”€ automation/
-â”‚   â””â”€â”€ sentinel_detection_automation.json
-â”‚
-â””â”€â”€ docs/
-    â”œâ”€â”€ Sentinel_Phase_01_ML_Training.md
-    â”œâ”€â”€ Sentinel_Phase_02_Model_Serving.md
-    â”œâ”€â”€ Sentinel_Phase_03_Database_Persistence.md
-    â”œâ”€â”€ Sentinel_Phase_04_n8n_Automation_Foundation.md
-    â””â”€â”€ Sentinel_Phase_05_FastAPI_n8n_Integration.md
+|-- .gitignore
+|-- README.md
+|
+|-- Dataset/
+|   `-- Dataset_README.md
+|
+|-- ML Models/
+|   |-- CNN/
+|   |   |-- 04_CICIDS2017_CNN.ipynb
+|   |   |-- sentinel_cnn_binary_v1_best.keras
+|   |   |-- sentinel_cnn_scaler_v1.joblib
+|   |   `-- sentinel_feature_columns_v1.joblib
+|   |
+|   |-- KNN/
+|   |   |-- 03_CICIDS2017_KNN.ipynb
+|   |   |-- KNN_README.md
+|   |   |-- sentinel_knn_scaler_v1.joblib
+|   |   `-- sentinel_feature_columns_v1.joblib
+|   |
+|   |-- Random Forest/
+|   |   |-- 01_CICIDS2017_RandomForest.ipynb
+|   |   |-- RandomForest_README.md
+|   |   `-- sentinel_feature_columns_v1.joblib
+|   |
+|   `-- XGBoost/
+|       |-- 02_CICIDS2017_XGBoost.ipynb
+|       |-- sentinel_xgboost_binary_v1.json
+|       `-- sentinel_feature_columns_v1.joblib
+|
+|-- backend/
+|   |-- app/
+|   |   |-- main.py
+|   |   |-- database.py
+|   |   |-- models.py
+|   |   `-- services/
+|   |       `-- automation.py
+|   |
+|   |-- test_prediction.py
+|   |-- test_n8n_connection.py
+|   `-- .gitignore
+|
+|-- automation/
+|   `-- sentinel_detection_automation.json
+|
+`-- docs/
+    |-- Sentinel_Phase_01_ML_Training.md
+    |-- Sentinel_Phase_02_Model_Serving.md
+    |-- Sentinel_Phase_03_Database_Persistence.md
+    |-- Sentinel_Phase_04_n8n_Automation_Foundation.md
+    |-- Sentinel_Phase_05_FastAPI_n8n_Integration.md
+    `-- Sentinel_Phase_06_Threat_Intelligence_Enrichment.md
 ```
 
 ---
@@ -232,7 +263,7 @@ The trained Random Forest binary is roughly 50 MB and is also excluded to keep t
 Reproduction instructions are available in:
 
 ```text
-ML Models/Random Forest/README.md
+ML Models/Random Forest/RandomForest_README.md
 ```
 
 ---
@@ -289,6 +320,8 @@ N8N_WEBHOOK_URL=http://localhost:5678/webhook/sentinel-detection
 
 Do not commit `.env`.
 
+The AbuseIPDB API key is stored in **n8n Credentials**, not in the repository.
+
 ---
 
 ## Running the Backend
@@ -328,6 +361,7 @@ GET  /model-info
 POST /predict
 GET  /detections
 GET  /detections/{detection_id}
+POST /detections/{detection_id}/enrichment
 ```
 
 The detection history endpoint supports:
@@ -338,13 +372,40 @@ attack=true
 attack=false
 ```
 
+The enrichment endpoint is used by the n8n ATTACK workflow to persist threat-intelligence results back into the existing detection record.
+
 ---
 
-## Example Prediction Response
+## Prediction Input
+
+Sentinel separates model features from network metadata:
 
 ```json
 {
-  "detection_id": 2,
+  "features": {
+    "Protocol": 6,
+    "Flow Duration": 12345
+  },
+  "metadata": {
+    "source_ip": "203.0.113.50",
+    "destination_ip": "192.168.1.10",
+    "source_port": 51542,
+    "destination_port": 22,
+    "transport_protocol": "TCP",
+    "observed_at": "2026-09-20T13:05:00+05:00"
+  }
+}
+```
+
+All 77 required feature names must be supplied for real inference. Metadata is optional and is not passed to XGBoost.
+
+---
+
+## Example BENIGN Prediction Response
+
+```json
+{
+  "detection_id": 10,
   "prediction": "BENIGN",
   "attack": false,
   "confidence": 0.999966,
@@ -356,12 +417,43 @@ attack=false
   "automation_result": {
     "status": "SAFE",
     "message": "Sentinel classified traffic as benign",
-    "detection_id": 2,
+    "detection_id": 10,
     "model": "XGBoost",
     "confidence": 0.9999658
   }
 }
 ```
+
+---
+
+## Threat Intelligence Enrichment
+
+ATTACK detections are enriched through AbuseIPDB.
+
+The n8n workflow sends the observed `source_ip` to AbuseIPDB and builds a structured incident containing fields such as:
+
+```text
+abuse_confidence_score
+is_whitelisted
+country
+isp
+domain
+usage_type
+total_reports
+last_reported_at
+```
+
+Threat intelligence is persisted using:
+
+```text
+threat_provider
+threat_intelligence (JSONB)
+enriched_at
+```
+
+Using JSONB keeps Sentinel flexible enough to add more threat-intelligence providers later without redesigning the database for every provider field.
+
+A backend safety guard rejects enrichment attempts for BENIGN detections.
 
 ---
 
@@ -371,14 +463,25 @@ The published automation workflow currently performs:
 
 ```text
 Webhook
-   â†“
+   |
+   v
 IF attack?
- â†™       â†˜
-TRUE    FALSE
- â†“        â†“
-CRITICAL  SAFE
- â†“        â†“
-Respond  Respond
+   |
+   +-- FALSE --> Prepare Benign Result --> Respond SAFE
+   |
+   `-- TRUE
+         |
+         v
+      Check Source IP Reputation
+         |
+         v
+      Prepare Attack Alert
+         |
+         v
+      Save Threat Intelligence
+         |
+         v
+      Respond with Enriched CRITICAL Incident
 ```
 
 The production webhook is configured as:
@@ -387,11 +490,13 @@ The production webhook is configured as:
 POST /webhook/sentinel-detection
 ```
 
-The workflow JSON should be exported into:
+The workflow JSON is exported into:
 
 ```text
 automation/sentinel_detection_automation.json
 ```
+
+The AbuseIPDB credential itself is not stored in the exported repository workflow.
 
 ---
 
@@ -414,25 +519,40 @@ These documents explain:
 - concepts learned
 - transition to the next phase
 
+Completed documentation currently covers Phases 1 through 6.
+
 ---
 
 ## Roadmap
 
-Upcoming development includes:
+### Phase 1 - ML Training & Evaluation
+Complete.
 
-### Phase 6 â€” Threat Intelligence Enrichment
-Use external security APIs to enrich suspicious detections.
+### Phase 2 - FastAPI Model Serving
+Complete.
 
-### Phase 7 â€” LLM Incident Analysis
-Generate human-readable incident summaries, severity explanations, and recommended actions.
+### Phase 3 - PostgreSQL Persistence
+Complete.
 
-### Phase 8 â€” Human Approval & Automated Response
+### Phase 4 - n8n Automation Foundation
+Complete.
+
+### Phase 5 - FastAPI to n8n Integration
+Complete.
+
+### Phase 6 - Threat Intelligence Enrichment
+Complete. Adds network metadata, AbuseIPDB reputation checks, enriched incidents, and PostgreSQL threat-intelligence persistence.
+
+### Phase 7 - LLM Incident Analysis
+**Next.** Generate human-readable incident summaries, severity explanations, contextual reasoning, and recommended actions from enriched incidents.
+
+### Phase 8 - Human Approval & Automated Response
 Add approval / rejection workflows before potentially disruptive actions.
 
-### Phase 9 â€” Real-Time System & Dashboard
+### Phase 9 - Real-Time System & Dashboard
 Add live traffic/flow ingestion, automatic inference, incident feeds, analytics, and dashboard views.
 
-### Phase 10 â€” Validation & Deployment
+### Phase 10 - Full Validation & Deployment Readiness
 Perform end-to-end validation using real benign and attack traffic, service-failure tests, reliability checks, and deployment hardening.
 
 ---
@@ -441,7 +561,7 @@ Perform end-to-end validation using real benign and attack traffic, service-fail
 
 Sentinel is intended to evolve into:
 
-> **An AI-powered network threat detection and automated incident-response platform that combines machine learning, event persistence, automation, external threat intelligence, and human-supervised response workflows.**
+> **An AI-powered network threat detection and automated incident-response platform that combines machine learning, event persistence, threat intelligence, LLM-assisted analysis, automation, and human-supervised response workflows.**
 
 ---
 

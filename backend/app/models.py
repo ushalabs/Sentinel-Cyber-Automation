@@ -57,3 +57,48 @@ class Detection(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False
     )
+
+    source_ip: Mapped[str | None] = mapped_column(
+        String(45),
+        nullable=True
+    )
+
+    destination_ip: Mapped[str | None] = mapped_column(
+        String(45),
+        nullable=True
+    )
+
+    source_port: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True
+    )
+
+    destination_port: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True
+    )
+
+    transport_protocol: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True
+    )
+
+    observed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    threat_provider: Mapped[str | None] = mapped_column(
+    String(50),
+    nullable=True
+    )
+
+    threat_intelligence: Mapped[dict | None] = mapped_column(
+    JSONB,
+    nullable=True
+    )
+
+    enriched_at: Mapped[datetime | None] = mapped_column(
+    DateTime(timezone=True),
+    nullable=True
+    )

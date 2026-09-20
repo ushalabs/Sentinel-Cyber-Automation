@@ -18,7 +18,15 @@ feature_columns = joblib.load(FEATURES_PATH)
 features = {feature: 0.0 for feature in feature_columns}
 
 payload = json.dumps({
-    "features": features
+    "features": features,
+    "metadata": {
+        "source_ip": "203.0.113.50",
+        "destination_ip": "192.168.1.10",
+        "source_port": 51542,
+        "destination_port": 22,
+        "transport_protocol": "TCP",
+        "observed_at": "2026-09-20T13:05:00+05:00"
+    }
 }).encode("utf-8")
 
 request = urllib.request.Request(

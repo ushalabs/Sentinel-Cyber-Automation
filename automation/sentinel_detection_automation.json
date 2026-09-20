@@ -65,26 +65,110 @@
             {
               "id": "dae8e8ce-078b-48d0-9e82-fc28f7831aa9",
               "name": "message",
-              "value": "Sentinel detected malicious network traffic",
+              "value": "Sentinel detected malicious network traffic and enriched the source IP with AbuseIPDB threat intelligence",
               "type": "string"
             },
             {
               "id": "16517bee-a665-486b-ac6e-b84337e371cb",
               "name": "detection_id",
-              "value": "={{ $json.body.detection_id }}",
+              "value": "={{ $('Webhook').item.json.body.detection_id }}",
               "type": "number"
             },
             {
               "id": "a5f186b1-abef-4d05-a2dc-93d3c00c35f7",
               "name": "model",
-              "value": "={{ $json.body.model }}",
+              "value": "={{ $('Webhook').item.json.body.model }}",
               "type": "string"
             },
             {
               "id": "9105e14c-2152-4ff1-a2e8-4b2104c8301b",
               "name": "confidence",
-              "value": "={{ $json.body.confidence }}",
+              "value": "={{ $('Webhook').item.json.body.confidence }}",
               "type": "number"
+            },
+            {
+              "id": "16ded6da-1bef-4871-9fda-942afbda657d",
+              "name": "source_ip",
+              "value": "={{ $('Webhook').item.json.body.source_ip }}",
+              "type": "string"
+            },
+            {
+              "id": "33abbc6b-319b-4f11-8db4-5474285df26f",
+              "name": "destination_ip",
+              "value": "={{ $('Webhook').item.json.body.destination_ip }}",
+              "type": "string"
+            },
+            {
+              "id": "02625816-084b-45ec-aafc-b583c682f703",
+              "name": "source_port",
+              "value": "={{ $('Webhook').item.json.body.source_port }}",
+              "type": "number"
+            },
+            {
+              "id": "1d32adfd-0289-4468-8e3a-5f659db09933",
+              "name": "destination_port",
+              "value": "={{ $('Webhook').item.json.body.destination_port }}",
+              "type": "number"
+            },
+            {
+              "id": "19425fd3-1589-4de0-9661-de03a0ed7e9b",
+              "name": "transport_protocol",
+              "value": "={{ $('Webhook').item.json.body.transport_protocol }}",
+              "type": "string"
+            },
+            {
+              "id": "06470ab2-f599-4ca5-a406-093a6f86a1ce",
+              "name": "observed_at",
+              "value": "={{ $('Webhook').item.json.body.observed_at }}",
+              "type": "string"
+            },
+            {
+              "id": "d51cbbe2-8af3-4bb9-b586-b61230687e9f",
+              "name": "abuse_confidence_score",
+              "value": "={{ $json.data.abuseConfidenceScore }}",
+              "type": "number"
+            },
+            {
+              "id": "73aef8c7-e74c-4f64-bad5-d3ec8bc62b3d",
+              "name": "is_whitelisted",
+              "value": "={{ $json.data.isWhitelisted }}",
+              "type": "boolean"
+            },
+            {
+              "id": "51c6a563-f615-413f-8ffd-c9d6a9e3bcc4",
+              "name": "country",
+              "value": "={{ $json.data.countryName }}",
+              "type": "string"
+            },
+            {
+              "id": "16d8fede-d8b0-42fa-b158-7c1ec331de91",
+              "name": "isp",
+              "value": "={{ $json.data.isp }}",
+              "type": "string"
+            },
+            {
+              "id": "f9ca051f-09e7-4f94-a517-43c7663357a1",
+              "name": "domain",
+              "value": "={{ $json.data.domain }}",
+              "type": "string"
+            },
+            {
+              "id": "e66b3bfd-8fe0-4a9e-8dd1-0b681497bdbf",
+              "name": "usage_type",
+              "value": "={{ $json.data.usageType }}",
+              "type": "string"
+            },
+            {
+              "id": "2c0484ac-0582-4faf-a06c-eac84365fcbd",
+              "name": "total_reports",
+              "value": "={{ $json.data.totalReports }}",
+              "type": "number"
+            },
+            {
+              "id": "b6de530f-8068-481c-ba99-c025684c7574",
+              "name": "last_reported_at",
+              "value": "={{ $json.data.lastReportedAt }}",
+              "type": "string"
             }
           ]
         },
@@ -93,8 +177,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
       "position": [
-        112,
-        -80
+        256,
+        -352
       ],
       "id": "f124bb51-7254-42ed-b628-18af3bb392e6",
       "name": "Prepare Attack Alert"
@@ -140,21 +224,23 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
       "position": [
-        112,
-        80
+        32,
+        128
       ],
       "id": "80ee2d3e-a45a-488e-aef3-3d6e692075e2",
       "name": "Prepare Benign Result"
     },
     {
       "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $('Prepare Attack Alert').item.json }}",
         "options": {}
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        288,
-        -208
+        448,
+        -144
       ],
       "id": "87e826c4-b54f-4e25-81ca-6c60503fc88c",
       "name": "Respond to Webhook (Attack)"
@@ -166,11 +252,77 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        288,
-        192
+        240,
+        128
       ],
       "id": "c5e0666a-d5f6-4b97-b228-8ca11c9f5092",
       "name": "Respond to Webhook (Bening)"
+    },
+    {
+      "parameters": {
+        "url": "https://api.abuseipdb.com/api/v2/check",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "ipAddress",
+              "value": "={{ $json.body.source_ip }}"
+            },
+            {
+              "name": "maxAgeInDays",
+              "value": "90"
+            },
+            {
+              "name": "verbose",
+              "value": "true"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        32,
+        -144
+      ],
+      "id": "e8a5ac1c-4e03-4395-b9da-5cd527fb2a6f",
+      "name": "Check Source IP Reputation",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "MyLuNlQAC6Qvofgf",
+          "name": "AbuseIPDB API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://127.0.0.1:8000/detections/{{ $('Webhook').item.json.body.detection_id }}/enrichment",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"threat_provider\": \"AbuseIPDB\",\n  \"threat_intelligence\": {\n    \"abuse_confidence_score\": {{ $json.abuse_confidence_score }},\n    \"is_whitelisted\": {{ $json.is_whitelisted }},\n    \"country\": \"{{ $json.country }}\",\n    \"isp\": \"{{ $json.isp }}\",\n    \"domain\": \"{{ $json.domain }}\",\n    \"usage_type\": \"{{ $json.usage_type }}\",\n    \"total_reports\": {{ $json.total_reports }},\n    \"last_reported_at\": \"{{ $json.last_reported_at }}\"\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        256,
+        -144
+      ],
+      "id": "31eb2387-d7cb-4e93-8f3e-ce5d3a318ab7",
+      "name": "Save Threat Intelligence"
     }
   ],
   "pinData": {},
@@ -190,7 +342,7 @@
       "main": [
         [
           {
-            "node": "Prepare Attack Alert",
+            "node": "Check Source IP Reputation",
             "type": "main",
             "index": 0
           }
@@ -208,7 +360,7 @@
       "main": [
         [
           {
-            "node": "Respond to Webhook (Attack)",
+            "node": "Save Threat Intelligence",
             "type": "main",
             "index": 0
           }
@@ -225,6 +377,28 @@
           }
         ]
       ]
+    },
+    "Check Source IP Reputation": {
+      "main": [
+        [
+          {
+            "node": "Prepare Attack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Threat Intelligence": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook (Attack)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -232,7 +406,7 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "dd9577d4-5455-45e8-b910-461e8ae11850",
+  "versionId": "9ecf6014-8c64-406d-8e8a-6c20536f74cf",
   "meta": {
     "instanceId": "a1b971ccd542966bf98edc508aa5ffb232b59afc6dd293657cfd10c7dda0468d"
   },

@@ -10,6 +10,7 @@ from app.database import get_db
 from app.models import Detection
 from pydantic import BaseModel
 from app.services.automation import send_detection_to_n8n
+from datetime import datetime, timezone
 
 
 # ---------------------------------------------------------
@@ -57,8 +58,22 @@ if len(feature_columns) != model.num_features():
 # Request schema
 # ---------------------------------------------------------
 
+class NetworkMetadata(BaseModel):
+    source_ip: str | None = None
+    destination_ip: str | None = None
+    source_port: int | None = None
+    destination_port: int | None = None
+    transport_protocol: str | None = None
+    observed_at: datetime | None = None
+
+
 class PredictionRequest(BaseModel):
     features: dict[str, float]
+    metadata: NetworkMetadata | None = None
+
+class ThreatEnrichmentRequest(BaseModel):
+    threat_provider: str
+    threat_intelligence: dict
 
 
 # ---------------------------------------------------------
@@ -160,7 +175,14 @@ def predict(
         attack_probability=float(attack_probability),
         threshold=0.5,
         model="XGBoost",
-        features=incoming
+        features=incoming,
+
+        source_ip=request.metadata.source_ip if request.metadata else None,
+        destination_ip=request.metadata.destination_ip if request.metadata else None,
+        source_port=request.metadata.source_port if request.metadata else None,
+        destination_port=request.metadata.destination_port if request.metadata else None,
+        transport_protocol=request.metadata.transport_protocol if request.metadata else None,
+        observed_at=request.metadata.observed_at if request.metadata else None,
     )
 
     try:
@@ -185,7 +207,13 @@ def predict(
             prediction=prediction,
             attack=predicted_class == 1,
             confidence=float(confidence),
-            model="XGBoost"
+            model="XGBoost",
+            source_ip=detection.source_ip,
+            destination_ip=detection.destination_ip,
+            source_port=detection.source_port,
+            destination_port=detection.destination_port,
+            transport_protocol=detection.transport_protocol,
+            observed_at=detection.observed_at,
         )
 
         automation_triggered = True
@@ -273,4 +301,50 @@ def get_detection(
         "model": detection.model,
         "features": detection.features,
         "created_at": detection.created_at
+    }
+
+@app.post("/detections/{detection_id}/enrichment")
+def save_threat_enrichment(
+    detection_id: int,
+    payload: ThreatEnrichmentRequest,
+    db: Session = Depends(get_db),
+):
+    detection = (
+        db.query(Detection)
+        .filter(Detection.id == detection_id)
+        .first()
+    )
+
+    if detection is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Detection not found"
+        )
+
+    if not detection.attack:
+        raise HTTPException(
+        status_code=400,
+        detail="Threat intelligence enrichment is only allowed for ATTACK detections"
+    )
+
+    detection.threat_provider = payload.threat_provider
+    detection.threat_intelligence = payload.threat_intelligence
+    detection.enriched_at = datetime.now(timezone.utc)
+
+    try:
+        db.commit()
+        db.refresh(detection)
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to save threat intelligence"
+        )
+
+    return {
+        "detection_id": detection.id,
+        "threat_provider": detection.threat_provider,
+        "threat_intelligence": detection.threat_intelligence,
+        "enriched_at": detection.enriched_at,
+        "message": "Threat intelligence saved successfully",
     }
