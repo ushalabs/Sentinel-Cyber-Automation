@@ -11,6 +11,13 @@ from app.models import Detection
 from pydantic import BaseModel
 from app.services.automation import send_detection_to_n8n
 from datetime import datetime, timezone
+from typing import Literal
+
+from app.services.llm_analysis import (
+    analyze_incident_with_llm,
+    LLM_PROVIDER,
+    LLM_MODEL,
+)
 
 
 # ---------------------------------------------------------
@@ -75,6 +82,15 @@ class ThreatEnrichmentRequest(BaseModel):
     threat_provider: str
     threat_intelligence: dict
 
+class IncidentAnalysis(BaseModel):
+    severity: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+    severity_reason: str
+    summary: str
+    likely_activity: str
+    reasoning: list[str]
+    risk_factors: list[str]
+    recommended_actions: list[str]
+    analyst_note: str
 
 # ---------------------------------------------------------
 # Basic routes
@@ -348,3 +364,69 @@ def save_threat_enrichment(
         "enriched_at": detection.enriched_at,
         "message": "Threat intelligence saved successfully",
     }
+
+@app.post("/detections/{detection_id}/analysis")
+def analyze_detection(
+    detection_id: int,
+    db: Session = Depends(get_db),
+):
+    detection = db.query(Detection).filter(Detection.id == detection_id).first()
+
+    if not detection:
+        raise HTTPException(
+            status_code=404,
+            detail="Detection not found"
+        )
+
+    if not detection.attack:
+        raise HTTPException(
+            status_code=400,
+            detail="LLM analysis is only allowed for ATTACK detections"
+        )
+
+    if not detection.threat_intelligence:
+        raise HTTPException(
+            status_code=400,
+            detail="Threat intelligence must exist before LLM analysis"
+        )
+
+    try:
+        detection.analysis_status = "PENDING"
+        detection.analysis_error = None
+        db.commit()
+
+        raw_analysis = analyze_incident_with_llm(detection)
+
+        validated_analysis = IncidentAnalysis(**raw_analysis)
+
+        detection.llm_provider = LLM_PROVIDER
+        detection.llm_model = LLM_MODEL
+        detection.incident_analysis = validated_analysis.model_dump()
+        detection.analysis_status = "COMPLETED"
+        detection.analysis_error = None
+        detection.analyzed_at = datetime.now(timezone.utc)
+
+        db.commit()
+        db.refresh(detection)
+
+        return {
+            "detection_id": detection.id,
+            "analysis_status": detection.analysis_status,
+            "llm_provider": detection.llm_provider,
+            "llm_model": detection.llm_model,
+            "incident_analysis": detection.incident_analysis,
+            "analyzed_at": detection.analyzed_at,
+        }
+
+    except Exception as exc:
+        db.rollback()
+
+        detection.analysis_status = "FAILED"
+        detection.analysis_error = str(exc)
+
+        db.commit()
+
+        raise HTTPException(
+            status_code=500,
+            detail="LLM incident analysis failed"
+        )

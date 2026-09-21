@@ -59,13 +59,13 @@
             {
               "id": "cc7d2e02-362a-413b-91b2-8d0298674986",
               "name": "status",
-              "value": "CRITICAL",
+              "value": "ATTACK_DETECTED",
               "type": "string"
             },
             {
               "id": "dae8e8ce-078b-48d0-9e82-fc28f7831aa9",
               "name": "message",
-              "value": "Sentinel detected malicious network traffic and enriched the source IP with AbuseIPDB threat intelligence",
+              "value": "Sentinel classified the network flow as ATTACK and enriched the source IP with AbuseIPDB threat intelligence",
               "type": "string"
             },
             {
@@ -177,8 +177,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
       "position": [
-        256,
-        -352
+        224,
+        -304
       ],
       "id": "f124bb51-7254-42ed-b628-18af3bb392e6",
       "name": "Prepare Attack Alert"
@@ -233,13 +233,13 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ $('Prepare Attack Alert').item.json }}",
+        "responseBody": "={{\n{\n  ...$('Prepare Attack Alert').item.json,\n\n  \"analysis_status\": $('Analyze Incident with LLM').item.json.analysis_status,\n  \"llm_provider\": $('Analyze Incident with LLM').item.json.llm_provider,\n  \"llm_model\": $('Analyze Incident with LLM').item.json.llm_model,\n  \"incident_analysis\": $('Analyze Incident with LLM').item.json.incident_analysis,\n  \"analyzed_at\": $('Analyze Incident with LLM').item.json.analyzed_at\n}\n}}",
         "options": {}
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        448,
+        752,
         -144
       ],
       "id": "87e826c4-b54f-4e25-81ca-6c60503fc88c",
@@ -252,7 +252,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        240,
+        256,
         128
       ],
       "id": "c5e0666a-d5f6-4b97-b228-8ca11c9f5092",
@@ -318,11 +318,26 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        256,
+        400,
         -144
       ],
       "id": "31eb2387-d7cb-4e93-8f3e-ce5d3a318ab7",
       "name": "Save Threat Intelligence"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://127.0.0.1:8000/detections/{{ $('Webhook').item.json.body.detection_id }}/analysis",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        576,
+        -304
+      ],
+      "id": "dc7b275b-5a23-4c4b-b4e1-c8ced9760312",
+      "name": "Analyze Incident with LLM"
     }
   ],
   "pinData": {},
@@ -393,6 +408,17 @@
       "main": [
         [
           {
+            "node": "Analyze Incident with LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Incident with LLM": {
+      "main": [
+        [
+          {
             "node": "Respond to Webhook (Attack)",
             "type": "main",
             "index": 0
@@ -406,7 +432,7 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "9ecf6014-8c64-406d-8e8a-6c20536f74cf",
+  "versionId": "b82ed28c-3d19-447b-8b76-ff388d39f736",
   "meta": {
     "instanceId": "a1b971ccd542966bf98edc508aa5ffb232b59afc6dd293657cfd10c7dda0468d"
   },

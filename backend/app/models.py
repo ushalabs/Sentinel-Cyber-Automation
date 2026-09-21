@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -101,4 +101,35 @@ class Detection(Base):
     enriched_at: Mapped[datetime | None] = mapped_column(
     DateTime(timezone=True),
     nullable=True
+    )
+
+    llm_provider: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True
+        )
+
+    llm_model: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True
+        )
+
+    incident_analysis: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True
+        )
+
+    analysis_status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="NOT_STARTED"
+    )
+
+    analysis_error: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True
+        )
+
+    analyzed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
     )

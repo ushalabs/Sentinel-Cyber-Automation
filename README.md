@@ -1,8 +1,8 @@
 # Sentinel
 
-Sentinel is an end-to-end network intrusion detection and cybersecurity automation platform built with machine learning, FastAPI, PostgreSQL, n8n, and external threat intelligence.
+Sentinel is an end-to-end network intrusion detection and cybersecurity automation platform built with machine learning, FastAPI, PostgreSQL, n8n, external threat intelligence, and LLM-assisted incident analysis.
 
-The project began as a binary CIC-IDS2017 intrusion classifier and is being expanded phase-by-phase into a complete detection, persistence, enrichment, analysis, and response system.
+The project began as a binary CIC-IDS2017 intrusion classifier and is being expanded phase-by-phase into a complete detection, persistence, enrichment, analysis, approval, response, monitoring, and deployment system.
 
 ---
 
@@ -16,8 +16,8 @@ The project began as a binary CIC-IDS2017 intrusion classifier and is being expa
 | 4 | n8n Automation Foundation | Complete |
 | 5 | FastAPI -> n8n Integration | Complete |
 | 6 | Threat Intelligence Enrichment | Complete |
-| 7 | LLM Incident Analysis | Next |
-| 8 | Human Approval & Automated Response | Planned |
+| 7 | LLM Incident Analysis | Complete |
+| 8 | Human Approval & Automated Response | Next |
 | 9 | Real-Time Detection System & Dashboard | Planned |
 | 10 | Full Validation & Deployment Readiness | Planned |
 
@@ -33,7 +33,6 @@ Sentinel can currently:
 - classify traffic as `BENIGN` or `ATTACK`
 - return attack probability and confidence
 - persist detections in PostgreSQL
-- preserve the original 77-feature payload as JSONB
 - store source/destination IPs, ports, protocol, and observation time
 - retrieve and filter detection history
 - automatically trigger a published n8n workflow after prediction
@@ -41,8 +40,11 @@ Sentinel can currently:
 - enrich ATTACK events with AbuseIPDB source-IP reputation data
 - persist threat-intelligence results back into PostgreSQL
 - reject threat enrichment for BENIGN detections
-- return a rich CRITICAL incident for ATTACK events
-- return a SAFE automation response for BENIGN events
+- send enriched ATTACK incidents to Google Gemini for structured analysis
+- validate LLM output with Pydantic
+- persist LLM provider, model, status, analysis JSONB, errors, and timestamps
+- return a combined ATTACK response containing ML, network, threat-intelligence, and LLM analysis data
+- keep BENIGN traffic on the original SAFE path without calling AbuseIPDB or Gemini
 
 ---
 
@@ -82,66 +84,97 @@ Sentinel can currently:
                 SAFE      AbuseIPDB Lookup
                                 |
                                 v
-                       Enriched Incident
+                       Threat Enrichment
                                 |
                                 v
                     Save Threat Intelligence
                                 |
                                 v
-                              FastAPI
+                      LLM Incident Analysis
                                 |
                                 v
-                           PostgreSQL
+                    Pydantic Validation
                                 |
                                 v
-                    Rich CRITICAL Response
+                    Save LLM Analysis
+                                |
+                                v
+                    Combined Incident Response
 ```
 
-The XGBoost model still receives exactly 77 ML features. Network identifiers are carried as metadata and are not fed into the model.
+The XGBoost model still receives exactly 77 numeric ML features. Network metadata, threat intelligence, and LLM analysis are kept as separate layers.
 
 ---
 
 ## Validation Evidence
 
-The screenshots below are from actual local development runs during the completed phases. They are included to make the repository implementation verifiable rather than documentation-only.
+The screenshots below are from actual local development runs during Phase 7.
 
-### FastAPI model-serving API
+### Gemini API connection
 
-The backend exposes the Sentinel API through FastAPI and Swagger.
+Sentinel successfully connected to the Gemini API and received a real model response.
 
-![Sentinel FastAPI Swagger interface](docs/assets/readme/01_fastapi_swagger.png)
+![Gemini API connection](docs/assets/readme/gemini%20connection.png)
 
-### FastAPI -> PostgreSQL -> n8n integration
+### Full n8n ATTACK pipeline
 
-A real backend prediction produced a persisted detection and successfully triggered the automation workflow.
+The production ATTACK branch completed through AbuseIPDB enrichment, persistence, Gemini incident analysis, and the final webhook response.
 
-![Successful FastAPI and n8n integration test](docs/assets/readme/02_fastapi_n8n_integration.png)
+![n8n Phase 7 execution](docs/assets/readme/n8n%20result.png)
 
-### Published ATTACK enrichment workflow
+### Structured LLM incident result
 
-The ATTACK branch performs an AbuseIPDB source-IP lookup, prepares an enriched incident, saves the threat intelligence, and returns the response.
+A controlled ATTACK test returned a complete structured incident analysis with severity, reasoning, risk factors, likely activity, recommended actions, and analyst notes.
 
-![n8n ATTACK threat-intelligence workflow](docs/assets/readme/03_n8n_attack_enrichment.png)
+![Structured incident analysis](docs/assets/readme/terminal%20result.png)
 
-### Enriched ATTACK response
+### Safety and regression validation
 
-A controlled integration test returned network metadata and AbuseIPDB context through the production webhook.
+Phase 7 validation confirmed that BENIGN traffic stays on the SAFE branch, ATTACK detections without threat intelligence are rejected, and nonexistent detection IDs return `404`.
 
-![Enriched Sentinel ATTACK response](docs/assets/readme/04_enriched_attack_response.png)
+![Phase 7 safety validation](docs/assets/readme/validation.png)
 
-The public IP used in this integration test was only a test target. The returned reputation showed a whitelist result and an abuse confidence score of 0. The CRITICAL state came from the deliberately fabricated ATTACK event used to exercise the pipeline.
+---
 
-### Threat-intelligence persistence
+## Phase 7: LLM Incident Analysis
 
-The same ATTACK record was updated in PostgreSQL with the provider, JSONB enrichment payload, and enrichment timestamp.
+Phase 7 adds a structured AI analysis layer on top of Sentinel's ML result and AbuseIPDB enrichment.
 
-![Threat intelligence persisted in PostgreSQL](docs/assets/readme/05_postgres_enrichment.png)
+The LLM does not replace XGBoost or threat intelligence. It receives the trusted incident context already stored by Sentinel and produces a structured analyst-oriented interpretation.
 
-### BENIGN regression validation
+Current development provider:
 
-After the Phase 6 changes, BENIGN traffic still bypassed the threat-intelligence branch and followed the original SAFE path.
+```text
+Google Gemini
+gemini-3.5-flash-lite
+```
 
-![BENIGN workflow regression test](docs/assets/readme/06_benign_regression.png)
+The output schema includes:
+
+```text
+severity
+severity_reason
+summary
+likely_activity
+reasoning
+risk_factors
+recommended_actions
+analyst_note
+```
+
+The final production response distinguishes:
+
+```text
+status = ATTACK_DETECTED
+```
+
+from:
+
+```text
+incident_analysis.severity = LOW / MEDIUM / HIGH / CRITICAL
+```
+
+This allows Sentinel to record that the ML detector raised an ATTACK while still allowing the analysis layer to assess the overall incident severity after considering threat-intelligence evidence.
 
 ---
 
@@ -165,6 +198,7 @@ After the Phase 6 changes, BENIGN traffic still bypassed the threat-intelligence
 - Uvicorn
 - Pydantic
 - httpx
+- Google GenAI SDK
 
 ### Database
 
@@ -180,6 +214,7 @@ After the Phase 6 changes, BENIGN traffic still bypassed the threat-intelligence
 - Conditional routing
 - HTTP integrations
 - AbuseIPDB
+- Google Gemini
 
 ### Development / Tooling
 
@@ -210,18 +245,12 @@ Four models were trained:
 - K-Nearest Neighbors
 - CNN
 
-XGBoost was selected as the initial production inference model.
+XGBoost was selected as the production inference model.
 
-The production model used by the backend is:
+Production model:
 
 ```text
 ML Models/XGBoost/sentinel_xgboost_binary_v1.json
-```
-
-The complete training and evaluation record is documented in:
-
-```text
-docs/Sentinel_Phase_01_ML_Training.md
 ```
 
 ---
@@ -248,7 +277,8 @@ Sentinel/
 |   |   |-- database.py
 |   |   |-- models.py
 |   |   `-- services/
-|   |       `-- automation.py
+|   |       |-- automation.py
+|   |       `-- llm_analysis.py
 |   |-- test_prediction.py
 |   |-- test_n8n_connection.py
 |   `-- .gitignore
@@ -258,13 +288,15 @@ Sentinel/
 |
 `-- docs/
     |-- assets/
-    |   `-- readme/
+    |   |-- readme/
+    |   `-- phase 6/
     |-- Sentinel_Phase_01_ML_Training.md
     |-- Sentinel_Phase_02_Model_Serving.md
     |-- Sentinel_Phase_03_Database_Persistence.md
     |-- Sentinel_Phase_04_n8n_Automation_Foundation.md
     |-- Sentinel_Phase_05_FastAPI_n8n_Integration.md
-    `-- Sentinel_Phase_06_Threat_Intelligence_Enrichment.md
+    |-- Sentinel_Phase_06_Threat_Intelligence_Enrichment.md
+    `-- Sentinel_Phase_07_LLM_Incident_Analysis.md
 ```
 
 ---
@@ -295,7 +327,7 @@ ML Models/KNN/KNN_README.md
 
 ### Random Forest binary
 
-The trained Random Forest binary is also excluded to keep the repository lightweight.
+The trained Random Forest binary is excluded to keep the repository lightweight.
 
 See:
 
@@ -307,43 +339,14 @@ Secrets such as:
 
 ```text
 backend/.env
+GEMINI_API_KEY
 AbuseIPDB API key
 database password
 ```
 
 are not committed.
 
-The AbuseIPDB key is stored using n8n Credentials.
-
----
-
-## Backend Setup
-
-Create and activate a virtual environment:
-
-```powershell
-cd backend
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-```
-
-Install the required Python dependencies for the backend and ML runtime.
-
-Current core dependencies include:
-
-```text
-fastapi
-uvicorn[standard]
-xgboost
-scikit-learn
-joblib
-numpy
-pandas
-sqlalchemy
-psycopg[binary]
-python-dotenv
-httpx
-```
+The AbuseIPDB key is stored using n8n Credentials and the Gemini key is loaded from the backend environment.
 
 ---
 
@@ -365,6 +368,7 @@ DB_PORT=5432
 DB_NAME=sentinel_db
 
 N8N_WEBHOOK_URL=http://localhost:5678/webhook/sentinel-detection
+GEMINI_API_KEY=your_gemini_key
 ```
 
 Do not commit `.env`.
@@ -373,7 +377,7 @@ Do not commit `.env`.
 
 ## Running Sentinel
 
-Start PostgreSQL, then start the FastAPI backend from:
+Start PostgreSQL, then start FastAPI from:
 
 ```text
 Sentinel/backend
@@ -421,73 +425,16 @@ POST /predict
 GET  /detections
 GET  /detections/{detection_id}
 POST /detections/{detection_id}/enrichment
+POST /detections/{detection_id}/analysis
 ```
 
-The detection history endpoint supports filtering by attack status.
-
-The enrichment endpoint is used by the n8n ATTACK workflow to write threat-intelligence results back into the existing detection.
-
----
-
-## Prediction Input
-
-Sentinel separates model features from network metadata:
-
-```json
-{
-  "features": {
-    "Protocol": 6,
-    "Flow Duration": 12345
-  },
-  "metadata": {
-    "source_ip": "203.0.113.50",
-    "destination_ip": "192.168.1.10",
-    "source_port": 51542,
-    "destination_port": 22,
-    "transport_protocol": "TCP",
-    "observed_at": "2026-09-20T13:05:00+05:00"
-  }
-}
-```
-
-A real inference request requires all 77 production feature names.
-
-Metadata is optional and is not passed to XGBoost.
-
----
-
-## Threat Intelligence
-
-ATTACK detections can be enriched through AbuseIPDB.
-
-The workflow can attach context such as:
-
-```text
-abuse_confidence_score
-is_whitelisted
-country
-isp
-domain
-usage_type
-total_reports
-last_reported_at
-```
-
-Threat intelligence is persisted using:
-
-```text
-threat_provider
-threat_intelligence
-enriched_at
-```
-
-`threat_intelligence` is stored as PostgreSQL JSONB so Sentinel can later support additional providers without adding a dedicated SQL column for every provider-specific property.
+The analysis endpoint verifies that the detection exists, is an ATTACK, and has threat intelligence before sending trusted incident context to Gemini. It validates and persists the structured result, and records provider failures without deleting the original incident.
 
 ---
 
 ## n8n Automation
 
-The published workflow currently performs:
+The current published workflow performs:
 
 ```text
 Webhook
@@ -509,13 +456,10 @@ IF attack?
       Save Threat Intelligence
          |
          v
-      Respond with Enriched CRITICAL Incident
-```
-
-The production webhook is:
-
-```text
-POST /webhook/sentinel-detection
+      Analyze Incident with LLM
+         |
+         v
+      Respond with Combined ATTACK Incident
 ```
 
 The exported workflow is stored at:
@@ -526,22 +470,37 @@ automation/sentinel_detection_automation.json
 
 ---
 
+## LLM Failure Handling
+
+Sentinel does not discard an incident when the external LLM provider fails.
+
+The analysis state can be:
+
+```text
+NOT_STARTED
+PENDING
+COMPLETED
+FAILED
+```
+
+When an LLM request fails:
+
+```text
+analysis_status = FAILED
+analysis_error = provider or validation error
+```
+
+The original ML detection and threat-intelligence data remain intact.
+
+During Phase 7 development, Gemini temporarily returned a `503 UNAVAILABLE` high-demand response. Sentinel captured the provider error correctly and preserved the detection. A lower-demand free-tier development model was then used successfully.
+
+---
+
 ## Phase Documentation
 
 Every completed phase has a dedicated technical record under `docs/`.
 
-These documents cover:
-
-- objectives
-- architecture
-- implementation
-- files changed
-- testing
-- problems encountered
-- concepts learned
-- transition to the next phase
-
-Completed documentation currently covers Phases 1 through 6.
+Completed documentation currently covers Phases 1 through 7.
 
 ---
 
@@ -569,15 +528,15 @@ Complete.
 
 ### Phase 6 - Threat Intelligence Enrichment
 
-Complete. Adds network metadata, AbuseIPDB reputation checks, enriched incidents, database write-back, and BENIGN safety validation.
+Complete.
 
 ### Phase 7 - LLM Incident Analysis
 
-**Next.** Add LLM-assisted incident summaries, context interpretation, severity reasoning, and recommended actions.
+Complete. Adds structured Gemini-based incident analysis, Pydantic validation, PostgreSQL persistence, failure tracking, and n8n integration.
 
 ### Phase 8 - Human Approval & Automated Response
 
-Add approval and rejection workflows before potentially disruptive actions.
+**Next.** Add human approval and rejection workflows before potentially disruptive response actions.
 
 ### Phase 9 - Real-Time Detection System & Dashboard
 
@@ -585,7 +544,7 @@ Add live traffic/flow ingestion, automatic inference, incident feeds, analytics,
 
 ### Phase 10 - Full Validation & Deployment Readiness
 
-Perform end-to-end validation using real benign and attack traffic, service-failure testing, reliability checks, and deployment hardening.
+Perform end-to-end validation using real benign and attack traffic, service-failure testing, reliability checks, deployment hardening, and final release preparation.
 
 ---
 
@@ -618,5 +577,3 @@ for dataset and reproduction notes.
 ## License
 
 A license has not yet been selected.
-
-Before a broader public release, an appropriate license should be chosen based on whether Sentinel remains portfolio-only, becomes open source, or evolves into a commercial project.
