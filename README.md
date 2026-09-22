@@ -1,6 +1,6 @@
 # Sentinel
 
-Sentinel is an end-to-end network intrusion detection and cybersecurity automation platform built with machine learning, FastAPI, PostgreSQL, n8n, external threat intelligence, and LLM-assisted incident analysis.
+Sentinel is an end-to-end network intrusion detection and cybersecurity automation platform built with machine learning, FastAPI, PostgreSQL, n8n, threat intelligence, LLM-assisted incident analysis, and a human-in-the-loop analyst dashboard.
 
 The project began as a binary CIC-IDS2017 intrusion classifier and is being expanded phase-by-phase into a complete detection, persistence, enrichment, analysis, approval, response, monitoring, and deployment system.
 
@@ -17,8 +17,8 @@ The project began as a binary CIC-IDS2017 intrusion classifier and is being expa
 | 5 | FastAPI -> n8n Integration | Complete |
 | 6 | Threat Intelligence Enrichment | Complete |
 | 7 | LLM Incident Analysis | Complete |
-| 8 | Human Approval & Automated Response | Next |
-| 9 | Real-Time Detection System & Dashboard | Planned |
+| 8 | Analyst Dashboard + Human Approval & Response | Complete |
+| 9 | Real-Time Detection + Live Monitoring & Analytics | Next |
 | 10 | Full Validation & Deployment Readiness | Planned |
 
 ---
@@ -43,7 +43,12 @@ Sentinel can currently:
 - send enriched ATTACK incidents to Google Gemini for structured analysis
 - validate LLM output with Pydantic
 - persist LLM provider, model, status, analysis JSONB, errors, and timestamps
-- return a combined ATTACK response containing ML, network, threat-intelligence, and LLM analysis data
+- expose incident details through a Next.js analyst dashboard
+- support light and dark dashboard themes
+- allow an analyst to approve or reject an incident response
+- restrict response actions to an explicit allowlist
+- execute approved response actions in simulation mode
+- persist review and response state back into PostgreSQL
 - keep BENIGN traffic on the original SAFE path without calling AbuseIPDB or Gemini
 
 ---
@@ -96,85 +101,153 @@ Sentinel can currently:
                     Pydantic Validation
                                 |
                                 v
-                    Save LLM Analysis
+                      Save LLM Analysis
                                 |
                                 v
-                    Combined Incident Response
+                       Analyst Dashboard
+                                |
+                                v
+                      Human Approve/Reject
+                                |
+                                v
+                  Allowlisted Response Service
+                                |
+                                v
+                    Persist Response Outcome
 ```
 
-The XGBoost model still receives exactly 77 numeric ML features. Network metadata, threat intelligence, and LLM analysis are kept as separate layers.
+The XGBoost model still receives exactly 77 numeric ML features. Network metadata, threat intelligence, LLM analysis, human review, and response state remain separate layers.
 
 ---
 
-## Validation Evidence
+## Phase 8 Validation Evidence
 
-The screenshots below are from actual local development runs during Phase 7.
+### Analyst dashboard
 
-### Gemini API connection
+The analyst dashboard displays detection history, ATTACK/BENIGN counts, confidence, model information, and clickable incident records.
 
-Sentinel successfully connected to the Gemini API and received a real model response.
+![Sentinel analyst dashboard](docs/assets/phase%208/01_analyst_dashboard.png)
 
-![Gemini API connection](docs/assets/readme/gemini%20connection.png)
+### Live threat intelligence and LLM incident analysis
 
-### Full n8n ATTACK pipeline
+A controlled ATTACK shell was processed through the live n8n production workflow, AbuseIPDB lookup, Gemini analysis, PostgreSQL persistence, and the dashboard. Gemini generated the incident severity from the evidence available to it.
 
-The production ATTACK branch completed through AbuseIPDB enrichment, persistence, Gemini incident analysis, and the final webhook response.
+![Live incident analysis](docs/assets/phase%208/02_live_incident_analysis.png)
 
-![n8n Phase 7 execution](docs/assets/readme/n8n%20result.png)
+### Human-controlled response execution
 
-### Structured LLM incident result
+The analyst approved a `LOG_ONLY` action from the dashboard. Sentinel executed the allowlisted response in simulation mode and persisted the completed result.
 
-A controlled ATTACK test returned a complete structured incident analysis with severity, reasoning, risk factors, likely activity, recommended actions, and analyst notes.
+![Human response execution](docs/assets/phase%208/03_human_response_execution.png)
 
-![Structured incident analysis](docs/assets/readme/terminal%20result.png)
-
-### Safety and regression validation
-
-Phase 7 validation confirmed that BENIGN traffic stays on the SAFE branch, ATTACK detections without threat intelligence are rejected, and nonexistent detection IDs return `404`.
-
-![Phase 7 safety validation](docs/assets/readme/validation.png)
+> Phase 8 validated the live AbuseIPDB -> Gemini -> dashboard -> human approval -> response path. The initial ATTACK state used for this specific controlled test was manually created, so it was not a true 77-feature XGBoost inference test. Full genuine end-to-end traffic validation is reserved for Phase 10.
 
 ---
 
-## Phase 7: LLM Incident Analysis
+## Phase 8: Analyst Dashboard + Human Approval & Response
 
-Phase 7 adds a structured AI analysis layer on top of Sentinel's ML result and AbuseIPDB enrichment.
+Phase 8 introduces a real analyst-facing web application instead of relying on PowerShell, Swagger, and pgAdmin for normal incident handling.
 
-The LLM does not replace XGBoost or threat intelligence. It receives the trusted incident context already stored by Sentinel and produces a structured analyst-oriented interpretation.
-
-Current development provider:
+The dashboard is built with:
 
 ```text
-Google Gemini
-gemini-3.5-flash-lite
+Next.js
+TypeScript
+Tailwind CSS
 ```
 
-The output schema includes:
+It consumes the existing FastAPI backend and does not duplicate backend logic.
+
+The dashboard currently supports:
 
 ```text
-severity
-severity_reason
-summary
-likely_activity
-reasoning
-risk_factors
-recommended_actions
-analyst_note
+Detection history
+ATTACK / BENIGN summary cards
+Attack rate
+Clickable incident details
+ML detection evidence
+Network metadata
+AbuseIPDB context
+AI incident analysis
+Severity badge
+Human review state
+Response state
+Approve / Reject controls
+Response-action selection
+Analyst notes
+Execute Approved Response
+Light / Dark mode
 ```
 
-The final production response distinguishes:
+---
+
+## Human Decision Layer
+
+A completed ATTACK analysis transitions into:
 
 ```text
-status = ATTACK_DETECTED
+review_status = PENDING
 ```
 
-from:
+The analyst can then:
 
 ```text
-incident_analysis.severity = LOW / MEDIUM / HIGH / CRITICAL
+APPROVE
+or
+REJECT
 ```
 
-This allows Sentinel to record that the ML detector raised an ATTACK while still allowing the analysis layer to assess the overall incident severity after considering threat-intelligence evidence.
+An approved incident stores:
+
+```text
+review_status = APPROVED
+response_action = selected action
+response_status = PENDING
+```
+
+A rejected incident stores:
+
+```text
+review_status = REJECTED
+response_action = NULL
+response_status = NOT_STARTED
+```
+
+Response execution is blocked unless:
+
+```text
+review_status == APPROVED
+```
+
+---
+
+## Response Actions
+
+The current allowlist is:
+
+```text
+BLOCK_SOURCE_IP
+LOG_ONLY
+```
+
+`BLOCK_SOURCE_IP` currently runs in:
+
+```text
+SIMULATION
+```
+
+mode, so Sentinel validates the full response lifecycle without modifying the host firewall during development.
+
+`LOG_ONLY` records the incident without taking a network action.
+
+The response state can be:
+
+```text
+NOT_STARTED
+PENDING
+EXECUTED
+FAILED
+```
 
 ---
 
@@ -215,6 +288,13 @@ This allows Sentinel to record that the ML detector raised an ATTACK while still
 - HTTP integrations
 - AbuseIPDB
 - Google Gemini
+
+### Dashboard
+
+- Next.js
+- React
+- TypeScript
+- Tailwind CSS
 
 ### Development / Tooling
 
@@ -260,7 +340,7 @@ ML Models/XGBoost/sentinel_xgboost_binary_v1.json
 ```text
 Sentinel/
 |-- .gitignore
-|-- README.md
+|-- README.MD
 |
 |-- Dataset/
 |   `-- Dataset_README.md
@@ -278,75 +358,41 @@ Sentinel/
 |   |   |-- models.py
 |   |   `-- services/
 |   |       |-- automation.py
-|   |       `-- llm_analysis.py
+|   |       |-- llm_analysis.py
+|   |       `-- response_service.py
 |   |-- test_prediction.py
 |   |-- test_n8n_connection.py
 |   `-- .gitignore
+|
+|-- dashboard/
+|   |-- app/
+|   |   |-- incidents/
+|   |   |   `-- [id]/
+|   |   |       `-- page.tsx
+|   |   |-- layout.tsx
+|   |   |-- globals.css
+|   |   `-- page.tsx
+|   |-- components/
+|   |   `-- ThemeToggle.tsx
+|   |-- package.json
+|   `-- next.config.ts
 |
 |-- automation/
 |   `-- sentinel_detection_automation.json
 |
 `-- docs/
     |-- assets/
-    |   |-- readme/
-    |   `-- phase 6/
+    |   |-- phase 7/
+    |   `-- phase 8/
     |-- Sentinel_Phase_01_ML_Training.md
     |-- Sentinel_Phase_02_Model_Serving.md
     |-- Sentinel_Phase_03_Database_Persistence.md
     |-- Sentinel_Phase_04_n8n_Automation_Foundation.md
     |-- Sentinel_Phase_05_FastAPI_n8n_Integration.md
     |-- Sentinel_Phase_06_Threat_Intelligence_Enrichment.md
-    `-- Sentinel_Phase_07_LLM_Incident_Analysis.md
+    |-- Sentinel_Phase_07_LLM_Incident_Analysis.md
+    `-- Sentinel_Phase_08_Analyst_Dashboard_Human_Approval_Response.md
 ```
-
----
-
-## Repository Notes
-
-Large generated artifacts are intentionally excluded from Git.
-
-### CIC-IDS2017 dataset archive
-
-The raw dataset ZIP is excluded.
-
-See:
-
-```text
-Dataset/Dataset_README.md
-```
-
-### KNN binary
-
-The trained KNN model is approximately 1 GB and is excluded.
-
-See:
-
-```text
-ML Models/KNN/KNN_README.md
-```
-
-### Random Forest binary
-
-The trained Random Forest binary is excluded to keep the repository lightweight.
-
-See:
-
-```text
-ML Models/Random Forest/RandomForest_README.md
-```
-
-Secrets such as:
-
-```text
-backend/.env
-GEMINI_API_KEY
-AbuseIPDB API key
-database password
-```
-
-are not committed.
-
-The AbuseIPDB key is stored using n8n Credentials and the Gemini key is loaded from the backend environment.
 
 ---
 
@@ -372,6 +418,8 @@ GEMINI_API_KEY=your_gemini_key
 ```
 
 Do not commit `.env`.
+
+The AbuseIPDB API key is stored using n8n Credentials rather than in source code.
 
 ---
 
@@ -413,6 +461,24 @@ n8n:
 http://localhost:5678
 ```
 
+Start the dashboard from:
+
+```text
+Sentinel/dashboard
+```
+
+with:
+
+```powershell
+npm run dev
+```
+
+Dashboard:
+
+```text
+http://localhost:3000
+```
+
 ---
 
 ## Main API Endpoints
@@ -426,73 +492,63 @@ GET  /detections
 GET  /detections/{detection_id}
 POST /detections/{detection_id}/enrichment
 POST /detections/{detection_id}/analysis
+POST /detections/{detection_id}/review
+POST /detections/{detection_id}/respond
 ```
-
-The analysis endpoint verifies that the detection exists, is an ATTACK, and has threat intelligence before sending trusted incident context to Gemini. It validates and persists the structured result, and records provider failures without deleting the original incident.
 
 ---
 
-## n8n Automation
+## Incident Lifecycle
 
-The current published workflow performs:
+A normal ATTACK incident now follows:
 
 ```text
-Webhook
+Detection
    |
    v
-IF attack?
+Threat Intelligence
    |
-   +-- FALSE --> Prepare Benign Result --> Respond SAFE
+   v
+LLM Analysis
    |
-   `-- TRUE
+   v
+review_status = PENDING
+   |
+   v
+Analyst Dashboard
+   |
+   +-- REJECT
+   |     |
+   |     v
+   |  No response
+   |
+   `-- APPROVE
          |
          v
-      Check Source IP Reputation
+   response_status = PENDING
          |
          v
-      Prepare Attack Alert
+   Execute Approved Response
          |
          v
-      Save Threat Intelligence
-         |
-         v
-      Analyze Incident with LLM
-         |
-         v
-      Respond with Combined ATTACK Incident
-```
-
-The exported workflow is stored at:
-
-```text
-automation/sentinel_detection_automation.json
+   EXECUTED / FAILED
 ```
 
 ---
 
-## LLM Failure Handling
+## Safety Controls
 
-Sentinel does not discard an incident when the external LLM provider fails.
+Sentinel currently enforces:
 
-The analysis state can be:
-
-```text
-NOT_STARTED
-PENDING
-COMPLETED
-FAILED
-```
-
-When an LLM request fails:
-
-```text
-analysis_status = FAILED
-analysis_error = provider or validation error
-```
-
-The original ML detection and threat-intelligence data remain intact.
-
-During Phase 7 development, Gemini temporarily returned a `503 UNAVAILABLE` high-demand response. Sentinel captured the provider error correctly and preserved the detection. A lower-demand free-tier development model was then used successfully.
+- BENIGN detections cannot be enriched as threats
+- BENIGN detections cannot receive LLM incident analysis
+- LLM analysis requires threat intelligence first
+- human review requires completed LLM analysis
+- response execution requires explicit human approval
+- already-reviewed detections cannot be reviewed again
+- already-executed responses cannot be executed again
+- response actions must belong to a fixed allowlist
+- disruptive network actions remain simulated during development
 
 ---
 
@@ -500,7 +556,7 @@ During Phase 7 development, Gemini temporarily returned a `503 UNAVAILABLE` high
 
 Every completed phase has a dedicated technical record under `docs/`.
 
-Completed documentation currently covers Phases 1 through 7.
+Completed documentation currently covers Phases 1 through 8.
 
 ---
 
@@ -532,19 +588,19 @@ Complete.
 
 ### Phase 7 - LLM Incident Analysis
 
-Complete. Adds structured Gemini-based incident analysis, Pydantic validation, PostgreSQL persistence, failure tracking, and n8n integration.
+Complete.
 
-### Phase 8 - Human Approval & Automated Response
+### Phase 8 - Analyst Dashboard + Human Approval & Response
 
-**Next.** Add human approval and rejection workflows before potentially disruptive response actions.
+Complete. Adds the Next.js analyst dashboard, light/dark mode, incident detail pages, human approval/rejection, allowlisted response actions, persisted response outcomes, and browser-based incident handling.
 
-### Phase 9 - Real-Time Detection System & Dashboard
+### Phase 9 - Real-Time Detection + Live Monitoring & Analytics
 
-Add live traffic/flow ingestion, automatic inference, incident feeds, analytics, and dashboard views.
+**Next.** Add real-time flow ingestion, automatic inference, live incident updates, dashboard analytics, charts, service-health indicators, and operational monitoring.
 
 ### Phase 10 - Full Validation & Deployment Readiness
 
-Perform end-to-end validation using real benign and attack traffic, service-failure testing, reliability checks, deployment hardening, and final release preparation.
+Perform genuine end-to-end validation using real benign and attack feature rows, service-failure testing, reliability checks, deployment hardening, final documentation, and release preparation.
 
 ---
 
@@ -552,7 +608,7 @@ Perform end-to-end validation using real benign and attack traffic, service-fail
 
 Sentinel is intended to evolve into:
 
-> **An AI-powered network threat detection and automated incident-response platform that combines machine learning, event persistence, threat intelligence, LLM-assisted analysis, automation, and human-supervised response workflows.**
+> **An AI-powered network threat detection and incident-response platform that combines machine learning, event persistence, threat intelligence, LLM-assisted analysis, automation, a professional analyst dashboard, and human-supervised response workflows.**
 
 ---
 

@@ -12,6 +12,8 @@ from pydantic import BaseModel
 from app.services.automation import send_detection_to_n8n
 from datetime import datetime, timezone
 from typing import Literal
+from app.services.response_service import execute_response
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.services.llm_analysis import (
     analyze_incident_with_llm,
@@ -28,6 +30,17 @@ app = FastAPI(
     title="Sentinel API",
     description="Backend API for Sentinel Network Intrusion Detection System",
     version="0.2.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -91,6 +104,11 @@ class IncidentAnalysis(BaseModel):
     risk_factors: list[str]
     recommended_actions: list[str]
     analyst_note: str
+
+class ReviewDecisionRequest(BaseModel):
+    decision: Literal["APPROVE", "REJECT"]
+    action: str | None = None
+    note: str | None = None
 
 # ---------------------------------------------------------
 # Basic routes
@@ -308,16 +326,49 @@ def get_detection(
         )
 
     return {
-        "id": detection.id,
-        "prediction": detection.prediction,
-        "attack": detection.attack,
-        "confidence": detection.confidence,
-        "attack_probability": detection.attack_probability,
-        "threshold": detection.threshold,
-        "model": detection.model,
-        "features": detection.features,
-        "created_at": detection.created_at
-    }
+    "id": detection.id,
+
+    # ML detection
+    "prediction": detection.prediction,
+    "attack": detection.attack,
+    "confidence": detection.confidence,
+    "attack_probability": detection.attack_probability,
+    "threshold": detection.threshold,
+    "model": detection.model,
+    "created_at": detection.created_at,
+
+    # Network metadata
+    "source_ip": detection.source_ip,
+    "destination_ip": detection.destination_ip,
+    "source_port": detection.source_port,
+    "destination_port": detection.destination_port,
+    "transport_protocol": detection.transport_protocol,
+    "observed_at": detection.observed_at,
+
+    # Threat intelligence
+    "threat_provider": detection.threat_provider,
+    "threat_intelligence": detection.threat_intelligence,
+    "enriched_at": detection.enriched_at,
+
+    # LLM analysis
+    "llm_provider": detection.llm_provider,
+    "llm_model": detection.llm_model,
+    "incident_analysis": detection.incident_analysis,
+    "analysis_status": detection.analysis_status,
+    "analysis_error": detection.analysis_error,
+    "analyzed_at": detection.analyzed_at,
+
+    # Human review
+    "review_status": detection.review_status,
+    "review_note": detection.review_note,
+    "reviewed_at": detection.reviewed_at,
+
+    # Response
+    "response_action": detection.response_action,
+    "response_status": detection.response_status,
+    "response_result": detection.response_result,
+    "responded_at": detection.responded_at,
+}
 
 @app.post("/detections/{detection_id}/enrichment")
 def save_threat_enrichment(
@@ -405,6 +456,7 @@ def analyze_detection(
         detection.analysis_status = "COMPLETED"
         detection.analysis_error = None
         detection.analyzed_at = datetime.now(timezone.utc)
+        detection.review_status = "PENDING"
 
         db.commit()
         db.refresh(detection)
@@ -429,4 +481,142 @@ def analyze_detection(
         raise HTTPException(
             status_code=500,
             detail="LLM incident analysis failed"
+        )
+
+@app.post("/detections/{detection_id}/review")
+def review_detection(
+    detection_id: int,
+    payload: ReviewDecisionRequest,
+    db: Session = Depends(get_db),
+):
+    detection = db.query(Detection).filter(
+        Detection.id == detection_id
+    ).first()
+
+    if not detection:
+        raise HTTPException(
+            status_code=404,
+            detail="Detection not found"
+        )
+
+    if not detection.attack:
+        raise HTTPException(
+            status_code=400,
+            detail="Human review is only allowed for ATTACK detections"
+        )
+
+    if detection.analysis_status != "COMPLETED":
+        raise HTTPException(
+            status_code=400,
+            detail="LLM analysis must be completed before human review"
+        )
+
+    if detection.review_status in {"APPROVED", "REJECTED"}:
+        raise HTTPException(
+            status_code=409,
+            detail="Detection has already been reviewed"
+        )
+
+    if payload.decision == "APPROVE":
+        if not payload.action:
+            raise HTTPException(
+                status_code=400,
+                detail="An action is required when approving a detection"
+            )
+
+        detection.review_status = "APPROVED"
+        detection.response_action = payload.action
+        detection.response_status = "PENDING"
+
+    elif payload.decision == "REJECT":
+        detection.review_status = "REJECTED"
+        detection.response_action = None
+        detection.response_status = "NOT_STARTED"
+
+    detection.review_note = payload.note
+    detection.reviewed_at = datetime.now(timezone.utc)
+
+    db.commit()
+    db.refresh(detection)
+
+    return {
+        "detection_id": detection.id,
+        "review_status": detection.review_status,
+        "review_note": detection.review_note,
+        "reviewed_at": detection.reviewed_at,
+        "response_action": detection.response_action,
+        "response_status": detection.response_status,
+    }
+
+@app.post("/detections/{detection_id}/respond")
+def respond_to_detection(
+    detection_id: int,
+    db: Session = Depends(get_db),
+):
+    detection = db.query(Detection).filter(
+        Detection.id == detection_id
+    ).first()
+
+    if not detection:
+        raise HTTPException(
+            status_code=404,
+            detail="Detection not found"
+        )
+
+    if not detection.attack:
+        raise HTTPException(
+            status_code=400,
+            detail="Response actions are only allowed for ATTACK detections"
+        )
+
+    if detection.review_status != "APPROVED":
+        raise HTTPException(
+            status_code=403,
+            detail="Human approval is required before executing a response"
+        )
+
+    if detection.response_status == "EXECUTED":
+        raise HTTPException(
+            status_code=409,
+            detail="Response has already been executed"
+        )
+
+    if not detection.response_action:
+        raise HTTPException(
+            status_code=400,
+            detail="No response action has been selected"
+        )
+
+    try:
+        result = execute_response(detection)
+
+        detection.response_status = "EXECUTED"
+        detection.response_result = result
+        detection.responded_at = datetime.now(timezone.utc)
+
+        db.commit()
+        db.refresh(detection)
+
+        return {
+            "detection_id": detection.id,
+            "response_action": detection.response_action,
+            "response_status": detection.response_status,
+            "response_result": detection.response_result,
+            "responded_at": detection.responded_at,
+        }
+
+    except Exception as exc:
+        db.rollback()
+
+        detection.response_status = "FAILED"
+        detection.response_result = {
+            "error": str(exc)
+        }
+        detection.responded_at = datetime.now(timezone.utc)
+
+        db.commit()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Response execution failed"
         )

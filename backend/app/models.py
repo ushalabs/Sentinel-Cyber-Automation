@@ -133,3 +133,40 @@ class Detection(Base):
         DateTime(timezone=True),
         nullable=True
     )
+
+    review_status: Mapped[str] = mapped_column(
+    String(20),
+    nullable=False,
+    default="NOT_REQUIRED"
+    )
+
+    review_note: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True
+    )
+
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    response_action: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True
+    )
+
+    response_status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="NOT_STARTED"
+    )
+
+    response_result: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True
+    )
+
+    responded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
