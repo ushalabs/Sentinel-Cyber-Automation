@@ -3,18 +3,28 @@ from pathlib import Path
 import joblib
 import numpy as np
 import xgboost as xgb
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Depends,
+    WebSocket,
+    WebSocketDisconnect,
+    BackgroundTasks,
+)
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Detection
 from pydantic import BaseModel
 from app.services.automation import send_detection_to_n8n
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Literal
 from app.services.response_service import execute_response
 from fastapi.middleware.cors import CORSMiddleware
-
+from app.services.live_events import manager
+from sqlalchemy import func, case
+import httpx
+from sqlalchemy import text
 from app.services.llm_analysis import (
     analyze_incident_with_llm,
     LLM_PROVIDER,
@@ -42,6 +52,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.websocket("/ws/events")
+async def websocket_events(websocket: WebSocket):
+    await manager.connect(websocket)
+
+    try:
+        while True:
+            await websocket.receive_text()
+
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
 
 
 # ---------------------------------------------------------
@@ -73,6 +94,10 @@ if len(feature_columns) != model.num_features():
         f"{model.num_features()}."
     )
 
+collector_state = {
+    "last_heartbeat": None,
+}
+
 
 # ---------------------------------------------------------
 # Request schema
@@ -90,6 +115,7 @@ class NetworkMetadata(BaseModel):
 class PredictionRequest(BaseModel):
     features: dict[str, float]
     metadata: NetworkMetadata | None = None
+    trigger_automation: bool = True
 
 class ThreatEnrichmentRequest(BaseModel):
     threat_provider: str
@@ -119,7 +145,7 @@ def root():
     return {
         "project": "Sentinel",
         "status": "online",
-        "phase": 2,
+        "phase": 9,
         "model": "XGBoost"
     }
 
@@ -150,6 +176,7 @@ def model_info():
 @app.post("/predict")
 def predict(
     request: PredictionRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
 
@@ -223,6 +250,18 @@ def predict(
         db.add(detection)
         db.commit()
         db.refresh(detection)
+        background_tasks.add_task(
+    manager.broadcast,
+    {
+        "event": "DETECTION_CREATED",
+        "detection_id": detection.id,
+        "prediction": detection.prediction,
+        "attack": detection.attack,
+        "confidence": detection.confidence,
+        "created_at": detection.created_at.isoformat(),
+    },
+)
+
 
     except Exception:
         db.rollback()
@@ -235,27 +274,38 @@ def predict(
     automation_result = None
     automation_triggered = False
 
-    try:
-        automation_result = send_detection_to_n8n(
-            detection_id=detection.id,
-            prediction=prediction,
-            attack=predicted_class == 1,
-            confidence=float(confidence),
-            model="XGBoost",
-            source_ip=detection.source_ip,
-            destination_ip=detection.destination_ip,
-            source_port=detection.source_port,
-            destination_port=detection.destination_port,
-            transport_protocol=detection.transport_protocol,
-            observed_at=detection.observed_at,
-        )
+    if request.trigger_automation and predicted_class == 1:
+        try:
+            automation_result = send_detection_to_n8n(
+                detection_id=detection.id,
+                prediction=prediction,
+                attack=predicted_class == 1,
+                confidence=float(confidence),
+                model="XGBoost",
+                source_ip=detection.source_ip,
+                destination_ip=detection.destination_ip,
+                source_port=detection.source_port,
+                destination_port=detection.destination_port,
+                transport_protocol=detection.transport_protocol,
+                observed_at=detection.observed_at,
+            )
 
-        automation_triggered = True
+            automation_triggered = True
 
-    except Exception as exc:
-        automation_result = {
-            "error": str(exc)
-        }
+        except Exception as exc:
+            automation_result = {
+                "error": str(exc)
+            }
+
+        else:
+            automation_result = {
+                "status": "skipped",
+                "reason": (
+                    "BENIGN detection"
+                    if predicted_class == 0
+                    else "automation disabled by prediction request"
+                ),
+            }
 
     return {
         "detection_id": detection.id,
@@ -270,6 +320,345 @@ def predict(
         "automation_result": automation_result
     }
 
+# ---------------------------------------------------------
+# Dashboard Analytics
+# ---------------------------------------------------------
+
+@app.get("/dashboard/stats")
+def dashboard_stats(
+    db: Session = Depends(get_db)
+):
+    total = db.query(Detection).count()
+
+    attacks = (
+        db.query(Detection)
+        .filter(Detection.attack.is_(True))
+        .count()
+    )
+
+    benign = total - attacks
+
+    pending_review = (
+        db.query(Detection)
+        .filter(Detection.review_status == "PENDING")
+        .count()
+    )
+
+    critical = (
+        db.query(Detection)
+        .filter(
+            Detection.incident_analysis["severity"].astext
+            == "CRITICAL"
+        )
+        .count()
+    )
+
+    attack_rate = (
+        round((attacks / total) * 100, 2)
+        if total > 0
+        else 0.0
+    )
+
+    return {
+        "total_detections": total,
+        "attacks": attacks,
+        "benign": benign,
+        "attack_rate": attack_rate,
+        "pending_review": pending_review,
+        "critical_incidents": critical,
+    }
+
+@app.get("/dashboard/activity")
+def dashboard_activity(
+    hours: int = 24,
+    db: Session = Depends(get_db)
+):
+    if hours < 1 or hours > 168:
+        raise HTTPException(
+            status_code=400,
+            detail="hours must be between 1 and 168"
+        )
+
+    start_time = (
+        datetime.now(timezone.utc)
+        - timedelta(hours=hours)
+    )
+
+    hour_bucket = func.date_trunc(
+        "hour",
+        Detection.created_at
+    )
+
+    rows = (
+        db.query(
+            hour_bucket.label("timestamp"),
+            func.count(Detection.id).label("total"),
+            func.sum(
+                case(
+                    (Detection.attack.is_(True), 1),
+                    else_=0
+                )
+            ).label("attacks"),
+        )
+        .filter(Detection.created_at >= start_time)
+        .group_by(hour_bucket)
+        .order_by(hour_bucket)
+        .all()
+    )
+
+    return [
+        {
+            "timestamp": row.timestamp,
+            "total": int(row.total),
+            "attacks": int(row.attacks or 0),
+            "benign": int(row.total) - int(row.attacks or 0),
+        }
+        for row in rows
+    ]
+
+@app.get("/dashboard/severity")
+def dashboard_severity(
+    db: Session = Depends(get_db)
+):
+    severity_field = (
+        Detection.incident_analysis["severity"].astext
+    )
+
+    rows = (
+        db.query(
+            severity_field.label("severity"),
+            func.count(Detection.id).label("count"),
+        )
+        .filter(
+            Detection.attack.is_(True),
+            Detection.analysis_status == "COMPLETED",
+            Detection.incident_analysis.isnot(None),
+        )
+        .group_by(severity_field)
+        .all()
+    )
+
+    counts = {
+        "LOW": 0,
+        "MEDIUM": 0,
+        "HIGH": 0,
+        "CRITICAL": 0,
+    }
+
+    for row in rows:
+        if row.severity in counts:
+            counts[row.severity] = int(row.count)
+
+    return [
+        {
+            "severity": severity,
+            "count": count,
+        }
+        for severity, count in counts.items()
+    ]
+
+@app.get("/dashboard/top-ports")
+def dashboard_top_ports(
+    limit: int = 5,
+    db: Session = Depends(get_db)
+):
+    if limit < 1 or limit > 20:
+        raise HTTPException(
+            status_code=400,
+            detail="limit must be between 1 and 20"
+        )
+
+    rows = (
+        db.query(
+            Detection.destination_port.label("port"),
+            func.count(Detection.id).label("count"),
+        )
+        .filter(
+            Detection.attack.is_(True),
+            Detection.destination_port.isnot(None),
+        )
+        .group_by(Detection.destination_port)
+        .order_by(func.count(Detection.id).desc())
+        .limit(limit)
+        .all()
+    )
+
+    return [
+        {
+            "port": int(row.port),
+            "count": int(row.count),
+        }
+        for row in rows
+    ]
+
+@app.get("/dashboard/top-sources")
+def dashboard_top_sources(
+    limit: int = 5,
+    db: Session = Depends(get_db)
+):
+    if limit < 1 or limit > 20:
+        raise HTTPException(
+            status_code=400,
+            detail="limit must be between 1 and 20"
+        )
+
+    rows = (
+        db.query(
+            Detection.source_ip.label("source_ip"),
+            func.count(Detection.id).label("count"),
+        )
+        .filter(
+            Detection.attack.is_(True),
+            Detection.source_ip.isnot(None),
+        )
+        .group_by(Detection.source_ip)
+        .order_by(func.count(Detection.id).desc())
+        .limit(limit)
+        .all()
+    )
+
+    return [
+        {
+            "source_ip": row.source_ip,
+            "count": int(row.count),
+        }
+        for row in rows
+    ]
+
+@app.get("/system/status")
+def system_status(
+    db: Session = Depends(get_db)
+):
+    status = {
+        "api": "ONLINE",
+        "database": "UNKNOWN",
+        "model": "UNKNOWN",
+        "n8n": "UNKNOWN",
+        "collector": "NOT_STARTED",
+    }
+
+    # PostgreSQL
+    try:
+        db.execute(text("SELECT 1"))
+        status["database"] = "ONLINE"
+    except Exception:
+        status["database"] = "OFFLINE"
+
+    # XGBoost model
+    try:
+        if (
+            model is not None
+            and model.num_features() == len(feature_columns)
+        ):
+            status["model"] = "LOADED"
+        else:
+            status["model"] = "ERROR"
+    except Exception:
+        status["model"] = "ERROR"
+
+    # n8n
+    try:
+        response = httpx.get(
+            "http://localhost:5678",
+            timeout=2.0,
+        )
+
+        status["n8n"] = (
+            "ONLINE"
+            if response.status_code < 500
+            else "OFFLINE"
+        )
+
+    except Exception:
+        status["n8n"] = "OFFLINE"
+
+    # Collector
+    last_heartbeat = collector_state["last_heartbeat"]
+
+    if last_heartbeat is not None:
+        age = (
+            datetime.now(timezone.utc)
+            - last_heartbeat
+        ).total_seconds()
+
+        if age <= 15:
+            status["collector"] = "RUNNING"
+        else:
+            status["collector"] = "OFFLINE"
+
+    return status
+
+@app.post("/collector/heartbeat")
+def collector_heartbeat():
+    collector_state["last_heartbeat"] = datetime.now(timezone.utc)
+
+    return {
+        "status": "received",
+        "last_heartbeat": collector_state["last_heartbeat"],
+    }
+
+@app.get("/dashboard/attention")
+def dashboard_attention(
+    limit: int = 20,
+    db: Session = Depends(get_db),
+):
+    if limit < 1 or limit > 50:
+        raise HTTPException(
+            status_code=400,
+            detail="limit must be between 1 and 50",
+        )
+
+    detections = (
+        db.query(Detection)
+        .filter(
+            Detection.attack.is_(True),
+            Detection.source_ip.isnot(None),
+            Detection.review_status.in_(
+                ["NOT_REQUIRED", "PENDING"]
+            ),
+        )
+        .order_by(Detection.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    result = []
+
+    for detection in detections:
+        analysis = detection.incident_analysis or {}
+
+        if detection.analysis_status == "FAILED":
+            attention_state = "ANALYSIS_FAILED"
+
+        elif detection.review_status == "PENDING":
+            attention_state = "PENDING_REVIEW"
+
+        else:
+            attention_state = "ANALYZING"
+
+        result.append(
+            {
+                "id": detection.id,
+                "prediction": detection.prediction,
+                "confidence": detection.confidence,
+                "attack_probability": detection.attack_probability,
+
+                "source_ip": detection.source_ip,
+                "destination_ip": detection.destination_ip,
+                "source_port": detection.source_port,
+                "destination_port": detection.destination_port,
+                "transport_protocol": detection.transport_protocol,
+
+                "severity": analysis.get("severity"),
+                "analysis_status": detection.analysis_status,
+                "review_status": detection.review_status,
+                "attention_state": attention_state,
+
+                "created_at": detection.created_at,
+            }
+        )
+
+    return result
 
 # ---------------------------------------------------------
 # Detection History
@@ -374,6 +763,7 @@ def get_detection(
 def save_threat_enrichment(
     detection_id: int,
     payload: ThreatEnrichmentRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     detection = (
@@ -401,6 +791,13 @@ def save_threat_enrichment(
     try:
         db.commit()
         db.refresh(detection)
+        background_tasks.add_task(
+    manager.broadcast,
+    {
+        "event": "THREAT_INTELLIGENCE_UPDATED",
+        "detection_id": detection.id,
+    },
+)
     except Exception:
         db.rollback()
         raise HTTPException(
@@ -419,6 +816,7 @@ def save_threat_enrichment(
 @app.post("/detections/{detection_id}/analysis")
 def analyze_detection(
     detection_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     detection = db.query(Detection).filter(Detection.id == detection_id).first()
@@ -460,6 +858,16 @@ def analyze_detection(
 
         db.commit()
         db.refresh(detection)
+        background_tasks.add_task(
+        manager.broadcast,
+        {
+        "event": "ANALYSIS_COMPLETED",
+        "detection_id": detection.id,
+        "severity": detection.incident_analysis.get("severity")
+        if detection.incident_analysis
+        else None,
+    },
+)
 
         return {
             "detection_id": detection.id,
@@ -487,6 +895,7 @@ def analyze_detection(
 def review_detection(
     detection_id: int,
     payload: ReviewDecisionRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     detection = db.query(Detection).filter(
@@ -538,6 +947,16 @@ def review_detection(
 
     db.commit()
     db.refresh(detection)
+    background_tasks.add_task(
+    manager.broadcast,
+    {
+        "event": "REVIEW_UPDATED",
+        "detection_id": detection.id,
+        "review_status": detection.review_status,
+        "response_action": detection.response_action,
+        "response_status": detection.response_status,
+    },
+)
 
     return {
         "detection_id": detection.id,
@@ -551,6 +970,7 @@ def review_detection(
 @app.post("/detections/{detection_id}/respond")
 def respond_to_detection(
     detection_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     detection = db.query(Detection).filter(
@@ -596,6 +1016,15 @@ def respond_to_detection(
 
         db.commit()
         db.refresh(detection)
+        background_tasks.add_task(
+        manager.broadcast,
+        {
+        "event": "RESPONSE_UPDATED",
+        "detection_id": detection.id,
+        "response_action": detection.response_action,
+        "response_status": detection.response_status,
+    },
+)
 
         return {
             "detection_id": detection.id,

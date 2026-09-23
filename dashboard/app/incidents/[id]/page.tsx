@@ -135,6 +135,64 @@ export default function IncidentPage() {
     loadIncident();
   }, [loadIncident]);
 
+  useEffect(() => {
+  let socket: WebSocket | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let active = true;
+
+  const connect = () => {
+    if (!active) return;
+
+    socket = new WebSocket(
+      "ws://127.0.0.1:8000/ws/events"
+    );
+
+    socket.onmessage = (message) => {
+      try {
+        const event = JSON.parse(message.data);
+
+        const relevantEvents = new Set([
+          "THREAT_INTELLIGENCE_UPDATED",
+          "ANALYSIS_COMPLETED",
+          "REVIEW_UPDATED",
+          "RESPONSE_UPDATED",
+        ]);
+
+        if (
+          relevantEvents.has(event.event) &&
+          Number(event.detection_id) === Number(params.id)
+        ) {
+          loadIncident();
+        }
+      } catch {
+        // Ignore malformed live events.
+      }
+    };
+
+    socket.onerror = () => {
+      socket?.close();
+    };
+
+    socket.onclose = () => {
+      if (active) {
+        reconnectTimer = setTimeout(connect, 2000);
+      }
+    };
+  };
+
+  connect();
+
+  return () => {
+    active = false;
+
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+    }
+
+    socket?.close();
+  };
+}, [loadIncident, params.id]);
+
   async function submitReview(
     decision: "APPROVE" | "REJECT"
   ) {

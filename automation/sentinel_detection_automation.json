@@ -11,46 +11,12 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        -416,
-        0
+        -384,
+        -144
       ],
       "id": "9fe1ab84-c330-4c16-af5a-4a88d44e037d",
       "name": "Webhook",
       "webhookId": "f88d5c0c-9524-440e-9507-9184c384ef5f"
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 3
-          },
-          "conditions": [
-            {
-              "id": "7dd69718-9c77-4a9a-af61-cbf6a25f7252",
-              "leftValue": "={{ $json.body.attack }}",
-              "rightValue": "",
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [
-        -192,
-        0
-      ],
-      "id": "9cd00bd7-ff5e-4f70-b5c7-812ca26df917",
-      "name": "If"
     },
     {
       "parameters": {
@@ -177,86 +143,11 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
       "position": [
-        224,
-        -304
+        160,
+        -288
       ],
       "id": "f124bb51-7254-42ed-b628-18af3bb392e6",
       "name": "Prepare Attack Alert"
-    },
-    {
-      "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "172459eb-54b6-4b11-a6d2-905d1a4be833",
-              "name": "status",
-              "value": "SAFE",
-              "type": "string"
-            },
-            {
-              "id": "93311000-9a28-48b4-bb60-78fffa2ada15",
-              "name": "message",
-              "value": "Sentinel classified traffic as benign",
-              "type": "string"
-            },
-            {
-              "id": "df95c4e0-e7f3-4b0b-97a8-0a8e0300a9a1",
-              "name": "detection_id",
-              "value": "={{ $json.body.detection_id }}",
-              "type": "number"
-            },
-            {
-              "id": "50193c6d-f235-459a-9271-461fcb9f1b6b",
-              "name": "model",
-              "value": "={{ $json.body.model }}",
-              "type": "string"
-            },
-            {
-              "id": "49ea0382-3a9f-4bcc-8867-ad33ef9c4d97",
-              "name": "confidence",
-              "value": "={{ $json.body.confidence }}",
-              "type": "number"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.5,
-      "position": [
-        32,
-        128
-      ],
-      "id": "80ee2d3e-a45a-488e-aef3-3d6e692075e2",
-      "name": "Prepare Benign Result"
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{\n{\n  ...$('Prepare Attack Alert').item.json,\n\n  \"analysis_status\": $('Analyze Incident with LLM').item.json.analysis_status,\n  \"llm_provider\": $('Analyze Incident with LLM').item.json.llm_provider,\n  \"llm_model\": $('Analyze Incident with LLM').item.json.llm_model,\n  \"incident_analysis\": $('Analyze Incident with LLM').item.json.incident_analysis,\n  \"analyzed_at\": $('Analyze Incident with LLM').item.json.analyzed_at\n}\n}}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.5,
-      "position": [
-        752,
-        -144
-      ],
-      "id": "87e826c4-b54f-4e25-81ca-6c60503fc88c",
-      "name": "Respond to Webhook (Attack)"
-    },
-    {
-      "parameters": {
-        "options": {}
-      },
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.5,
-      "position": [
-        256,
-        128
-      ],
-      "id": "c5e0666a-d5f6-4b97-b228-8ca11c9f5092",
-      "name": "Respond to Webhook (Bening)"
     },
     {
       "parameters": {
@@ -294,8 +185,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        32,
-        -144
+        -64,
+        -288
       ],
       "id": "e8a5ac1c-4e03-4395-b9da-5cd527fb2a6f",
       "name": "Check Source IP Reputation",
@@ -318,8 +209,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        400,
-        -144
+        384,
+        -288
       ],
       "id": "31eb2387-d7cb-4e93-8f3e-ce5d3a318ab7",
       "name": "Save Threat Intelligence"
@@ -333,11 +224,26 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        576,
-        -304
+        384,
+        -48
       ],
       "id": "dc7b275b-5a23-4c4b-b4e1-c8ced9760312",
       "name": "Analyze Incident with LLM"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{\n{\n  ...$('Prepare Attack Alert').item.json,\n\n  \"analysis_status\": $('Analyze Incident with LLM').item.json.analysis_status,\n  \"llm_provider\": $('Analyze Incident with LLM').item.json.llm_provider,\n  \"llm_model\": $('Analyze Incident with LLM').item.json.llm_model,\n  \"incident_analysis\": $('Analyze Incident with LLM').item.json.incident_analysis,\n  \"analyzed_at\": $('Analyze Incident with LLM').item.json.analyzed_at\n}\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -64,
+        -48
+      ],
+      "id": "87e826c4-b54f-4e25-81ca-6c60503fc88c",
+      "name": "Respond to Webhook"
     }
   ],
   "pinData": {},
@@ -346,25 +252,7 @@
       "main": [
         [
           {
-            "node": "If",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "If": {
-      "main": [
-        [
-          {
             "node": "Check Source IP Reputation",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Prepare Benign Result",
             "type": "main",
             "index": 0
           }
@@ -376,17 +264,6 @@
         [
           {
             "node": "Save Threat Intelligence",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Prepare Benign Result": {
-      "main": [
-        [
-          {
-            "node": "Respond to Webhook (Bening)",
             "type": "main",
             "index": 0
           }
@@ -419,7 +296,7 @@
       "main": [
         [
           {
-            "node": "Respond to Webhook (Attack)",
+            "node": "Respond to Webhook",
             "type": "main",
             "index": 0
           }
@@ -432,7 +309,7 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "b82ed28c-3d19-447b-8b76-ff388d39f736",
+  "versionId": "38024ea7-cddf-42e0-8689-b0a6c7c24c25",
   "meta": {
     "instanceId": "a1b971ccd542966bf98edc508aa5ffb232b59afc6dd293657cfd10c7dda0468d"
   },
