@@ -16,6 +16,24 @@ class Detection(Base):
         index=True
     )
 
+    request_id: Mapped[str | None] = mapped_column(
+    String(64),
+    nullable=True,
+    unique=True,
+    index=True,
+    )
+
+    queue_dismissed: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
+    queue_dismissed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
     prediction: Mapped[str] = mapped_column(
         String(20),
         nullable=False

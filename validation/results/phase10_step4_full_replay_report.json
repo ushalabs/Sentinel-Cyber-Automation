@@ -1,0 +1,262 @@
+{
+  "phase": 10,
+  "step": 4,
+  "test": "full_benign_and_attack_replay_validation",
+  "started_at": "2026-09-24T05:45:06.859997+00:00",
+  "checks": [
+    {
+      "name": "FastAPI preflight is healthy",
+      "passed": true,
+      "detail": "{'status': 'healthy', 'model_loaded': True, 'model': 'XGBoost', 'expected_features': 77}"
+    },
+    {
+      "name": "PostgreSQL is ONLINE before replay",
+      "passed": true,
+      "detail": "{'api': 'ONLINE', 'database': 'ONLINE', 'model': 'LOADED', 'n8n': 'ONLINE', 'collector': 'NOT_STARTED'}"
+    },
+    {
+      "name": "XGBoost is LOADED before replay",
+      "passed": true,
+      "detail": "{'api': 'ONLINE', 'database': 'ONLINE', 'model': 'LOADED', 'n8n': 'ONLINE', 'collector': 'NOT_STARTED'}"
+    },
+    {
+      "name": "n8n is ONLINE before ATTACK replay",
+      "passed": true,
+      "detail": "{'api': 'ONLINE', 'database': 'ONLINE', 'model': 'LOADED', 'n8n': 'ONLINE', 'collector': 'NOT_STARTED'}"
+    },
+    {
+      "name": "Genuine BENIGN replay returns HTTP 200",
+      "passed": true,
+      "detail": "status=200 body={'detection_id': 107, 'prediction': 'BENIGN', 'attack': False, 'confidence': 0.999773, 'attack_probability': 0.000227, 'threshold': 0.5, 'model': 'XGBoost', 'created_at': '2026-09-24T10:45:07.543757+05:00', 'automation_triggered': False, 'automation_result': {'status': 'skipped', 'reason': 'BENIGN detection'}}"
+    },
+    {
+      "name": "Genuine BENIGN replay is classified BENIGN",
+      "passed": true,
+      "detail": "{'detection_id': 107, 'prediction': 'BENIGN', 'attack': False, 'confidence': 0.999773, 'attack_probability': 0.000227, 'threshold': 0.5, 'model': 'XGBoost', 'created_at': '2026-09-24T10:45:07.543757+05:00', 'automation_triggered': False, 'automation_result': {'status': 'skipped', 'reason': 'BENIGN detection'}}"
+    },
+    {
+      "name": "BENIGN is skipped by automation even when requested",
+      "passed": true,
+      "detail": "automation={'status': 'skipped', 'reason': 'BENIGN detection'}"
+    },
+    {
+      "name": "BENIGN persisted without threat intelligence or LLM analysis",
+      "passed": true,
+      "detail": "{'id': 107, 'analysis_status': 'NOT_STARTED', 'review_status': 'NOT_REQUIRED'}"
+    },
+    {
+      "name": "Genuine DDoS replay returns HTTP 200",
+      "passed": true,
+      "detail": "status=200 body={'detection_id': 108, 'prediction': 'ATTACK', 'attack': True, 'confidence': 0.999999, 'attack_probability': 0.999999, 'threshold': 0.5, 'model': 'XGBoost', 'created_at': '2026-09-24T10:45:07.614504+05:00', 'automation_triggered': True, 'automation_result': {'status': 'ATTACK_DETECTED', 'message': 'Sentinel classified the network flow as ATTACK and enriched the source IP with AbuseIPDB threat intelligence', 'detection_id': 108, 'model': 'XGBoost', 'confidence': 0.9999988079071045, 'source_ip': '8.8.8.8', 'destination_ip': '192.0.2.50', 'source_port': 55155, 'destination_port': 443, 'transport_protocol': 'TCP', 'observed_at': '2026-09-24T10:45:07.598977+05:00', 'abuse_confidence_score': 0, 'is_whitelisted': True, 'country': 'United States of America', 'isp': 'Google LLC', 'domain': 'google.com', 'usage_type': 'Content Delivery Network', 'total_reports': 204, 'last_reported_at': '2026-09-24T01:20:08+00:00', 'analysis_status': 'COMPLETED', 'llm_provider': 'Google Gemini', 'llm_model': 'gemini-3.5-flash-lite', 'incident_analysis': {'summary': 'An inbound TCP connection from Google IP 8.8.8.8 to destination 192.0.2.50 on port 443 was flagged as an attack by the ML model, but threat intelligence shows it is a legitimate infrastructure entity.', 'severity': 'LOW', 'reasoning': ['The XGBoost model predicted an attack with high probability.', 'Network flow indicates standard HTTPS (port 443) traffic from a known public DNS and content delivery network provider (Google LLC).', 'Threat intelligence shows the source IP is whitelisted and has an abuse confidence score of 0 despite historical reports.'], 'analyst_note': 'The high ML confidence score contradicts the highly trusted source IP and zero abuse score, strongly suggesting a false positive.', 'risk_factors': ['Machine learning detection model flagged the traffic as malicious.'], 'likely_activity': 'Standard HTTPS traffic or API communication involving Google services.', 'severity_reason': 'Although the XGBoost model predicted an attack with high confidence, the source IP 8.8.8.8 belongs to Google LLC, is whitelisted, and has an AbuseIPDB confidence score of 0, indicating a likely false positive.', 'recommended_actions': ['Verify whether the destination host legitimately communicates with Google services.', 'Review model telemetry to determine why standard HTTPS traffic triggered an attack prediction.']}, 'analyzed_at': '2026-09-24T10:45:12.249730+05:00'}}"
+    },
+    {
+      "name": "Genuine DDoS replay is classified ATTACK",
+      "passed": true,
+      "detail": "{'detection_id': 108, 'prediction': 'ATTACK', 'attack': True, 'confidence': 0.999999, 'attack_probability': 0.999999, 'threshold': 0.5, 'model': 'XGBoost', 'created_at': '2026-09-24T10:45:07.614504+05:00', 'automation_triggered': True, 'automation_result': {'status': 'ATTACK_DETECTED', 'message': 'Sentinel classified the network flow as ATTACK and enriched the source IP with AbuseIPDB threat intelligence', 'detection_id': 108, 'model': 'XGBoost', 'confidence': 0.9999988079071045, 'source_ip': '8.8.8.8', 'destination_ip': '192.0.2.50', 'source_port': 55155, 'destination_port': 443, 'transport_protocol': 'TCP', 'observed_at': '2026-09-24T10:45:07.598977+05:00', 'abuse_confidence_score': 0, 'is_whitelisted': True, 'country': 'United States of America', 'isp': 'Google LLC', 'domain': 'google.com', 'usage_type': 'Content Delivery Network', 'total_reports': 204, 'last_reported_at': '2026-09-24T01:20:08+00:00', 'analysis_status': 'COMPLETED', 'llm_provider': 'Google Gemini', 'llm_model': 'gemini-3.5-flash-lite', 'incident_analysis': {'summary': 'An inbound TCP connection from Google IP 8.8.8.8 to destination 192.0.2.50 on port 443 was flagged as an attack by the ML model, but threat intelligence shows it is a legitimate infrastructure entity.', 'severity': 'LOW', 'reasoning': ['The XGBoost model predicted an attack with high probability.', 'Network flow indicates standard HTTPS (port 443) traffic from a known public DNS and content delivery network provider (Google LLC).', 'Threat intelligence shows the source IP is whitelisted and has an abuse confidence score of 0 despite historical reports.'], 'analyst_note': 'The high ML confidence score contradicts the highly trusted source IP and zero abuse score, strongly suggesting a false positive.', 'risk_factors': ['Machine learning detection model flagged the traffic as malicious.'], 'likely_activity': 'Standard HTTPS traffic or API communication involving Google services.', 'severity_reason': 'Although the XGBoost model predicted an attack with high confidence, the source IP 8.8.8.8 belongs to Google LLC, is whitelisted, and has an AbuseIPDB confidence score of 0, indicating a likely false positive.', 'recommended_actions': ['Verify whether the destination host legitimately communicates with Google services.', 'Review model telemetry to determine why standard HTTPS traffic triggered an attack prediction.']}, 'analyzed_at': '2026-09-24T10:45:12.249730+05:00'}}"
+    },
+    {
+      "name": "ATTACK automation is triggered",
+      "passed": true,
+      "detail": "automation={'status': 'ATTACK_DETECTED', 'message': 'Sentinel classified the network flow as ATTACK and enriched the source IP with AbuseIPDB threat intelligence', 'detection_id': 108, 'model': 'XGBoost', 'confidence': 0.9999988079071045, 'source_ip': '8.8.8.8', 'destination_ip': '192.0.2.50', 'source_port': 55155, 'destination_port': 443, 'transport_protocol': 'TCP', 'observed_at': '2026-09-24T10:45:07.598977+05:00', 'abuse_confidence_score': 0, 'is_whitelisted': True, 'country': 'United States of America', 'isp': 'Google LLC', 'domain': 'google.com', 'usage_type': 'Content Delivery Network', 'total_reports': 204, 'last_reported_at': '2026-09-24T01:20:08+00:00', 'analysis_status': 'COMPLETED', 'llm_provider': 'Google Gemini', 'llm_model': 'gemini-3.5-flash-lite', 'incident_analysis': {'summary': 'An inbound TCP connection from Google IP 8.8.8.8 to destination 192.0.2.50 on port 443 was flagged as an attack by the ML model, but threat intelligence shows it is a legitimate infrastructure entity.', 'severity': 'LOW', 'reasoning': ['The XGBoost model predicted an attack with high probability.', 'Network flow indicates standard HTTPS (port 443) traffic from a known public DNS and content delivery network provider (Google LLC).', 'Threat intelligence shows the source IP is whitelisted and has an abuse confidence score of 0 despite historical reports.'], 'analyst_note': 'The high ML confidence score contradicts the highly trusted source IP and zero abuse score, strongly suggesting a false positive.', 'risk_factors': ['Machine learning detection model flagged the traffic as malicious.'], 'likely_activity': 'Standard HTTPS traffic or API communication involving Google services.', 'severity_reason': 'Although the XGBoost model predicted an attack with high confidence, the source IP 8.8.8.8 belongs to Google LLC, is whitelisted, and has an AbuseIPDB confidence score of 0, indicating a likely false positive.', 'recommended_actions': ['Verify whether the destination host legitimately communicates with Google services.', 'Review model telemetry to determine why standard HTTPS traffic triggered an attack prediction.']}, 'analyzed_at': '2026-09-24T10:45:12.249730+05:00'}"
+    },
+    {
+      "name": "Threat intelligence is persisted",
+      "passed": true,
+      "detail": "{'provider': 'AbuseIPDB', 'enriched_at': '2026-09-24T10:45:09.501388+05:00'}"
+    },
+    {
+      "name": "Gemini incident analysis completes",
+      "passed": true,
+      "detail": "{'analysis_status': 'COMPLETED', 'llm_provider': 'Google Gemini', 'severity': 'LOW', 'analysis_error': None}"
+    },
+    {
+      "name": "Completed ATTACK is handed to human review",
+      "passed": true,
+      "detail": "review_status=PENDING"
+    },
+    {
+      "name": "ATTACK appears in the Analyst Queue",
+      "passed": true,
+      "detail": "attack_id=108 queue_ids=[108, 106, 104]"
+    },
+    {
+      "name": "BENIGN does not appear in the Analyst Queue",
+      "passed": true,
+      "detail": "benign_id=107"
+    }
+  ],
+  "benign": {
+    "predict_result": {
+      "detection_id": 107,
+      "prediction": "BENIGN",
+      "attack": false,
+      "confidence": 0.999773,
+      "attack_probability": 0.000227,
+      "threshold": 0.5,
+      "model": "XGBoost",
+      "created_at": "2026-09-24T10:45:07.543757+05:00",
+      "automation_triggered": false,
+      "automation_result": {
+        "status": "skipped",
+        "reason": "BENIGN detection"
+      }
+    },
+    "detection": {
+      "id": 107,
+      "prediction": "BENIGN",
+      "attack": false,
+      "confidence": 0.9997727064619539,
+      "attack_probability": 0.00022729353804606944,
+      "threshold": 0.5,
+      "model": "XGBoost",
+      "created_at": "2026-09-24T10:45:07.543757+05:00",
+      "source_ip": "192.0.2.40",
+      "destination_ip": "192.0.2.50",
+      "source_port": 54000,
+      "destination_port": 443,
+      "transport_protocol": "TCP",
+      "observed_at": "2026-09-24T10:45:07.508564+05:00",
+      "threat_provider": null,
+      "threat_intelligence": null,
+      "enriched_at": null,
+      "llm_provider": null,
+      "llm_model": null,
+      "incident_analysis": null,
+      "analysis_status": "NOT_STARTED",
+      "analysis_error": null,
+      "analyzed_at": null,
+      "review_status": "NOT_REQUIRED",
+      "review_note": null,
+      "reviewed_at": null,
+      "response_action": null,
+      "response_status": "NOT_STARTED",
+      "response_result": null,
+      "responded_at": null
+    }
+  },
+  "attack": {
+    "predict_result": {
+      "detection_id": 108,
+      "prediction": "ATTACK",
+      "attack": true,
+      "confidence": 0.999999,
+      "attack_probability": 0.999999,
+      "threshold": 0.5,
+      "model": "XGBoost",
+      "created_at": "2026-09-24T10:45:07.614504+05:00",
+      "automation_triggered": true,
+      "automation_result": {
+        "status": "ATTACK_DETECTED",
+        "message": "Sentinel classified the network flow as ATTACK and enriched the source IP with AbuseIPDB threat intelligence",
+        "detection_id": 108,
+        "model": "XGBoost",
+        "confidence": 0.9999988079071045,
+        "source_ip": "8.8.8.8",
+        "destination_ip": "192.0.2.50",
+        "source_port": 55155,
+        "destination_port": 443,
+        "transport_protocol": "TCP",
+        "observed_at": "2026-09-24T10:45:07.598977+05:00",
+        "abuse_confidence_score": 0,
+        "is_whitelisted": true,
+        "country": "United States of America",
+        "isp": "Google LLC",
+        "domain": "google.com",
+        "usage_type": "Content Delivery Network",
+        "total_reports": 204,
+        "last_reported_at": "2026-09-24T01:20:08+00:00",
+        "analysis_status": "COMPLETED",
+        "llm_provider": "Google Gemini",
+        "llm_model": "gemini-3.5-flash-lite",
+        "incident_analysis": {
+          "summary": "An inbound TCP connection from Google IP 8.8.8.8 to destination 192.0.2.50 on port 443 was flagged as an attack by the ML model, but threat intelligence shows it is a legitimate infrastructure entity.",
+          "severity": "LOW",
+          "reasoning": [
+            "The XGBoost model predicted an attack with high probability.",
+            "Network flow indicates standard HTTPS (port 443) traffic from a known public DNS and content delivery network provider (Google LLC).",
+            "Threat intelligence shows the source IP is whitelisted and has an abuse confidence score of 0 despite historical reports."
+          ],
+          "analyst_note": "The high ML confidence score contradicts the highly trusted source IP and zero abuse score, strongly suggesting a false positive.",
+          "risk_factors": [
+            "Machine learning detection model flagged the traffic as malicious."
+          ],
+          "likely_activity": "Standard HTTPS traffic or API communication involving Google services.",
+          "severity_reason": "Although the XGBoost model predicted an attack with high confidence, the source IP 8.8.8.8 belongs to Google LLC, is whitelisted, and has an AbuseIPDB confidence score of 0, indicating a likely false positive.",
+          "recommended_actions": [
+            "Verify whether the destination host legitimately communicates with Google services.",
+            "Review model telemetry to determine why standard HTTPS traffic triggered an attack prediction."
+          ]
+        },
+        "analyzed_at": "2026-09-24T10:45:12.249730+05:00"
+      }
+    },
+    "detection": {
+      "id": 108,
+      "prediction": "ATTACK",
+      "attack": true,
+      "confidence": 0.9999988079071045,
+      "attack_probability": 0.9999988079071045,
+      "threshold": 0.5,
+      "model": "XGBoost",
+      "created_at": "2026-09-24T10:45:07.614504+05:00",
+      "source_ip": "8.8.8.8",
+      "destination_ip": "192.0.2.50",
+      "source_port": 55155,
+      "destination_port": 443,
+      "transport_protocol": "TCP",
+      "observed_at": "2026-09-24T10:45:07.598977+05:00",
+      "threat_provider": "AbuseIPDB",
+      "threat_intelligence": {
+        "isp": "Google LLC",
+        "domain": "google.com",
+        "country": "United States of America",
+        "usage_type": "Content Delivery Network",
+        "total_reports": 204,
+        "is_whitelisted": true,
+        "last_reported_at": "2026-09-24T01:20:08+00:00",
+        "abuse_confidence_score": 0
+      },
+      "enriched_at": "2026-09-24T10:45:09.501388+05:00",
+      "llm_provider": "Google Gemini",
+      "llm_model": "gemini-3.5-flash-lite",
+      "incident_analysis": {
+        "summary": "An inbound TCP connection from Google IP 8.8.8.8 to destination 192.0.2.50 on port 443 was flagged as an attack by the ML model, but threat intelligence shows it is a legitimate infrastructure entity.",
+        "severity": "LOW",
+        "reasoning": [
+          "The XGBoost model predicted an attack with high probability.",
+          "Network flow indicates standard HTTPS (port 443) traffic from a known public DNS and content delivery network provider (Google LLC).",
+          "Threat intelligence shows the source IP is whitelisted and has an abuse confidence score of 0 despite historical reports."
+        ],
+        "analyst_note": "The high ML confidence score contradicts the highly trusted source IP and zero abuse score, strongly suggesting a false positive.",
+        "risk_factors": [
+          "Machine learning detection model flagged the traffic as malicious."
+        ],
+        "likely_activity": "Standard HTTPS traffic or API communication involving Google services.",
+        "severity_reason": "Although the XGBoost model predicted an attack with high confidence, the source IP 8.8.8.8 belongs to Google LLC, is whitelisted, and has an AbuseIPDB confidence score of 0, indicating a likely false positive.",
+        "recommended_actions": [
+          "Verify whether the destination host legitimately communicates with Google services.",
+          "Review model telemetry to determine why standard HTTPS traffic triggered an attack prediction."
+        ]
+      },
+      "analysis_status": "COMPLETED",
+      "analysis_error": null,
+      "analyzed_at": "2026-09-24T10:45:12.249730+05:00",
+      "review_status": "PENDING",
+      "review_note": null,
+      "reviewed_at": null,
+      "response_action": null,
+      "response_status": "NOT_STARTED",
+      "response_result": null,
+      "responded_at": null
+    },
+    "analyst_queue_ids": [
+      108,
+      106,
+      104
+    ]
+  },
+  "finished_at": "2026-09-24T05:45:12.319015+00:00",
+  "passed": 16,
+  "failed": 0,
+  "status": "PASS"
+}

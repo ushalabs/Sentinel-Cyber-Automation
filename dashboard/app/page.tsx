@@ -215,6 +215,42 @@ export default function Home() {
     }
   }, []);
 
+  const dismissFromQueue = useCallback(
+    async (detectionId: number) => {
+      try {
+        const response = await fetch(
+          `http://127.0.0.1:8000/detections/${detectionId}/dismiss-from-queue`,
+          {
+            method: "POST",
+          }
+        );
+
+        if (!response.ok) {
+          const body = await response.text();
+
+          throw new Error(
+            body ||
+              "Failed to dismiss incident from Analyst Queue"
+          );
+        }
+
+        // Remove immediately from the UI.
+        setAttention((current) =>
+          current.filter(
+            (item) => item.id !== detectionId
+          )
+        );
+      } catch (err) {
+        window.alert(
+          err instanceof Error
+            ? err.message
+            : "Failed to dismiss incident from Analyst Queue"
+        );
+      }
+    },
+    []
+  );
+
   useEffect(() => {
     loadDashboard();
   }, [loadDashboard]);
@@ -287,6 +323,7 @@ export default function Home() {
             "ANALYSIS_COMPLETED",
             "REVIEW_UPDATED",
             "RESPONSE_UPDATED",
+            "QUEUE_DISMISSED",
           ]);
 
           if (
@@ -357,7 +394,10 @@ export default function Home() {
         </header>
 
         <section className="mb-5 xl:hidden">
-          <AnalystQueuePanel attention={attention} />
+          <AnalystQueuePanel
+            attention={attention}
+            onDismiss={dismissFromQueue}
+          />
         </section>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
@@ -664,7 +704,10 @@ export default function Home() {
             className="hidden xl:sticky xl:top-6 xl:block xl:self-start"
             aria-label="Analyst queue"
           >
-            <AnalystQueuePanel attention={attention} />
+            <AnalystQueuePanel
+            attention={attention}
+            onDismiss={dismissFromQueue}
+          />
           </aside>
         </div>
       </div>
@@ -910,8 +953,10 @@ function LegendDot({
 
 function AnalystQueuePanel({
   attention,
+  onDismiss,
 }: {
   attention: AttentionItem[];
+  onDismiss: (detectionId: number) => void;
 }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-red-500/25 bg-white shadow-xl shadow-black/5 dark:border-red-500/25 dark:bg-zinc-900 dark:shadow-black/30">
@@ -943,7 +988,7 @@ function AnalystQueuePanel({
             </h2>
 
             <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
-              ATTACK detections stay pinned here until an analyst reviews them.
+              ATTACK detections stay pinned here until reviewed or dismissed.
             </p>
           </div>
 
@@ -969,6 +1014,7 @@ function AnalystQueuePanel({
             <AttentionCard
               key={item.id}
               item={item}
+              onDismiss={onDismiss}
             />
           ))
         )}
@@ -979,8 +1025,10 @@ function AnalystQueuePanel({
 
 function AttentionCard({
   item,
+  onDismiss,
 }: {
   item: AttentionItem;
+  onDismiss: (detectionId: number) => void;
 }) {
   const stateLabel =
     item.attention_state === "PENDING_REVIEW"
@@ -1006,10 +1054,7 @@ function AttentionCard({
           : "bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400";
 
   return (
-    <a
-      href={`/incidents/${item.id}`}
-      className="block rounded-xl border border-zinc-200 bg-zinc-50 p-4 transition hover:border-red-400 hover:bg-red-50/40 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-red-500/60 dark:hover:bg-red-500/5"
-    >
+    <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 transition dark:border-zinc-800 dark:bg-zinc-950">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-sm font-bold">
@@ -1018,7 +1063,9 @@ function AttentionCard({
 
           <div className="mt-1 font-mono text-xs text-zinc-500 dark:text-zinc-400">
             {item.source_ip ?? "Unknown source"}
-            {item.source_port != null ? `:${item.source_port}` : ""}
+            {item.source_port != null
+              ? `:${item.source_port}`
+              : ""}
           </div>
         </div>
 
@@ -1028,12 +1075,16 @@ function AttentionCard({
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
-        <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${stateClass}`}>
+        <span
+          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${stateClass}`}
+        >
           {stateLabel}
         </span>
 
         {item.severity && (
-          <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${severityClass}`}>
+          <span
+            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${severityClass}`}
+          >
             {item.severity}
           </span>
         )}
@@ -1044,6 +1095,7 @@ function AttentionCard({
           <div className="text-zinc-500 dark:text-zinc-500">
             Confidence
           </div>
+
           <div className="mt-1 font-semibold">
             {(item.confidence * 100).toFixed(2)}%
           </div>
@@ -1053,19 +1105,32 @@ function AttentionCard({
           <div className="text-zinc-500 dark:text-zinc-500">
             Protocol
           </div>
+
           <div className="mt-1 font-semibold">
             {item.transport_protocol ?? "—"}
           </div>
         </div>
       </div>
 
-      <div className="mt-4 flex items-center justify-between border-t border-zinc-200 pt-3 text-xs dark:border-zinc-800">
-        <span className="text-zinc-500 dark:text-zinc-400">
-          Open incident
-        </span>
-        <span aria-hidden="true">→</span>
+      <div className="mt-4 grid grid-cols-2 gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+        <a
+          href={`/incidents/${item.id}`}
+          className="flex items-center justify-center gap-2 rounded-lg bg-zinc-200 px-3 py-2 text-xs font-semibold text-zinc-800 transition hover:bg-zinc-300 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+        >
+          View
+          <span aria-hidden="true">→</span>
+        </a>
+
+        <button
+          type="button"
+          onClick={() => onDismiss(item.id)}
+          className="rounded-lg border border-red-500/30 px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-500/10 dark:text-red-400"
+          title="Remove from Analyst Queue without deleting incident history"
+        >
+          Dismiss
+        </button>
       </div>
-    </a>
+    </div>
   );
 }
 

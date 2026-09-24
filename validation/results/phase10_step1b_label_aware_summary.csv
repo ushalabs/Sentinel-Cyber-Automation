@@ -1,0 +1,9 @@
+dataset,status,label_column,finite_benign_available,finite_attack_available,rows_tested,benign_tested,attack_tested,correct,incorrect,accuracy,precision,recall,specificity,tn,fp,fn,tp
+Benign-Monday-no-metadata.parquet,OK,Label,458831,0,250,250,0,249,1,0.996,0.0,,0.996,249,1,0,0
+Botnet-Friday-no-metadata.parquet,OK,Label,174601,1437,500,250,250,496,4,0.992,1.0,0.984,1.0,250,0,4,246
+Bruteforce-Tuesday-no-metadata.parquet,OK,Label,380564,9150,500,250,250,500,0,1.0,1.0,1.0,1.0,250,0,0,250
+DDoS-Friday-no-metadata.parquet,OK,Label,93250,128014,500,250,250,499,1,0.998,0.9960159362549801,1.0,0.996,249,1,0,250
+DoS-Wednesday-no-metadata.parquet,OK,Label,391235,193756,500,250,250,500,0,1.0,1.0,1.0,1.0,250,0,0,250
+Infiltration-Thursday-no-metadata.parquet,OK,Label,207594,36,286,250,36,282,4,0.986013986013986,1.0,0.8888888888888888,1.0,250,0,4,32
+Portscan-Friday-no-metadata.parquet,OK,Label,117566,1956,500,250,250,500,0,1.0,1.0,1.0,1.0,250,0,0,250
+WebAttacks-Thursday-no-metadata.parquet,OK,Label,153677,2143,500,250,250,499,1,0.998,1.0,0.996,1.0,250,0,1,249

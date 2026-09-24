@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
+import hashlib
 
 from scapy.all import sniff, IP, TCP, UDP
 
@@ -222,7 +223,19 @@ def heartbeat_loop():
 
         time.sleep(HEARTBEAT_INTERVAL)
 
+def build_request_id(flow: Flow) -> str:
+    raw = (
+        f"{flow.protocol_name}|"
+        f"{flow.fwd_src_ip}|"
+        f"{flow.fwd_src_port}|"
+        f"{flow.fwd_dst_ip}|"
+        f"{flow.fwd_dst_port}|"
+        f"{flow.first_seen_us}"
+    )
 
+    return hashlib.sha256(
+        raw.encode("utf-8")
+    ).hexdigest()
 
 def send_flow_for_prediction(
     flow: Flow,
@@ -234,6 +247,7 @@ def send_flow_for_prediction(
     ).isoformat()
 
     payload = {
+        "request_id": build_request_id(flow),
         "features": features,
         "metadata": {
             "source_ip": flow.fwd_src_ip,

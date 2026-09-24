@@ -39,7 +39,7 @@ def send_detection_to_n8n(
     response = httpx.post(
         N8N_WEBHOOK_URL,
         json=payload,
-        timeout=10.0
+        timeout=60.0
     )
 
     response.raise_for_status()
