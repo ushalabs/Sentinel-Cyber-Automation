@@ -42,7 +42,7 @@ Sentinel is a real-time network intrusion detection and incident-response platfo
 
 The Collector captures live TCP/UDP traffic, groups packets into bidirectional flows, builds the required 77-feature CICFlow-style vector, and submits completed flows to FastAPI.
 
-XGBoost classifies each flow as `BENIGN` or `ATTACK`. Every detection is stored in PostgreSQL and streamed to the dashboard.
+XGBoost classifies each flow as `BENIGN` or `ATTACK`. Every detection is persisted in PostgreSQL and streamed to the dashboard through WebSockets.
 
 <p align="center">
   <img src="docs/assets/readme/live_demo.gif" alt="Sentinel Live Detection Demo" width="100%">
@@ -50,79 +50,99 @@ XGBoost classifies each flow as `BENIGN` or `ATTACK`. Every detection is stored 
 
 ### 2. Attack Automation
 
-BENIGN detections stop after persistence and dashboard delivery.
+BENIGN detections are persisted and displayed without entering the attack-enrichment pipeline.
 
-ATTACK detections continue into the automation pipeline:
-
-```text
-ATTACK
-  ↓
-n8n
-  ↓
-AbuseIPDB Reputation Check
-  ↓
-Threat Intelligence Persistence
-  ↓
-Gemini Incident Analysis
-  ↓
-Analyst Queue
-```
+ATTACK detections are sent through n8n for threat-intelligence enrichment and LLM analysis before entering the Analyst Queue.
 
 <p align="center">
-  <img src="docs/assets/readme/n8n%20flow.png" alt="Sentinel n8n Automation Flow" width="100%">
+  <img src="docs/assets/readme/n8n%20flow.png" alt="Sentinel n8n Automation Flow" width="78%">
 </p>
 
 ### 3. Analyst Dashboard
 
-The dashboard provides live detections, service health, attack confidence, incident review, and an Analyst Queue.
+The dashboard provides live detections, service health, confidence scores, incident review, and the Analyst Queue.
 
-Analysts can inspect incidents, approve or reject response actions, or dismiss an alert from the active queue without deleting its history.
+Analysts can inspect incidents, approve or reject reviewed incidents, or dismiss an item from the active queue without deleting its stored history.
 
 <p align="center">
-  <img src="docs/assets/readme/dashboard.png" alt="Sentinel Dashboard" width="100%">
+  <img src="docs/assets/readme/dashboard.png" alt="Sentinel Dashboard" width="82%">
 </p>
 
 ### 4. Security Analytics
 
-Sentinel summarizes recent activity through severity distribution, targeted ports, source IPs, detection activity, and platform health.
+Sentinel summarizes recent activity through severity distribution, targeted ports, source IPs, detection activity, and platform-health monitoring.
 
 <p align="center">
-  <img src="docs/assets/readme/analytics.png" alt="Sentinel Security Analytics" width="100%">
+  <img src="docs/assets/readme/analytics.png" alt="Sentinel Security Analytics" width="82%">
 </p>
 
 ## Complete Workflow
 
 ```text
 Live Network Traffic
-        ↓
-Packet Collector
-        ↓
-77-Feature Flow Extraction
-        ↓
-FastAPI
-        ↓
-XGBoost
-        ↓
-PostgreSQL
-        ↓
- ┌───────────────┴───────────────┐
- ↓                               ↓
-BENIGN                         ATTACK
- ↓                               ↓
-Dashboard                       n8n
-                                 ↓
-                          AbuseIPDB Enrichment
-                                 ↓
-                           Gemini Analysis
-                                 ↓
-                           Analyst Queue
-                                 ↓
-                    Approve / Reject / Dismiss
-                                 ↓
-                     Allowlisted Response Action
-                                 ↓
-                         Simulation Execution
+        |
+        v
+Npcap + Scapy Collector
+        |
+        v
+Bidirectional Flow Construction
+        |
+        v
+77-Feature Extraction
+        |
+        v
+FastAPI /predict
+        |
+        v
+XGBoost Classification
+        |
+        v
+PostgreSQL Persistence
+        |
+        v
++-------------------+
+|                   |
+v                   v
+BENIGN            ATTACK
+|                   |
+v                   v
+Dashboard           n8n
+                    |
+                    v
+          AbuseIPDB Reputation Check
+                    |
+                    v
+          Threat Intelligence Stored
+                    |
+                    v
+            Gemini LLM Analysis
+                    |
+                    v
+              Analyst Queue
+                    |
+                    v
+        +-----------+-----------+
+        |                       |
+        v                       v
+     Dismiss               Open Incident
+        |                       |
+        v                       v
+Queue item removed         Human Review
+History preserved          /          \
+                           v            v
+                        REJECT       APPROVE
+                           |            |
+                           v            v
+                     No response   Allowlisted Action
+                                        |
+                                        v
+                              Simulation Execution
+                                        |
+                                        v
+                                Result Persisted
 ```
+
+`Dismiss` only removes an item from the active Analyst Queue. It does not delete the incident, threat intelligence, analysis, or detection history.
 
 ## Using the Repository
 
@@ -145,9 +165,7 @@ You will need:
 - an AbuseIPDB API key
 - a Google Gemini API key
 
-### 3. Prepare the Python backend
-
-Create and activate a virtual environment inside `backend`:
+### 3. Prepare the Python environment
 
 ```powershell
 cd backend
@@ -155,13 +173,13 @@ python -m venv venv
 .\venv\Scripts\Activate.ps1
 ```
 
-Install the backend and collector dependencies used by Sentinel:
+Install the backend and Collector dependencies:
 
 ```powershell
 pip install fastapi uvicorn sqlalchemy "psycopg[binary]" python-dotenv pydantic httpx xgboost joblib numpy pandas pyarrow scapy google-genai
 ```
 
-### 4. Create the PostgreSQL database
+### 4. Prepare PostgreSQL
 
 Create a local PostgreSQL database named:
 
@@ -169,7 +187,7 @@ Create a local PostgreSQL database named:
 sentinel_db
 ```
 
-Use pgAdmin or PostgreSQL CLI tools to prepare the database schema required by the current `Detection` model.
+Create the database schema required by the current `Detection` model before starting Sentinel.
 
 Then create:
 
@@ -177,7 +195,7 @@ Then create:
 backend/.env
 ```
 
-with your local configuration:
+with your own local values:
 
 ```env
 DB_USER=postgres
@@ -206,25 +224,20 @@ Open:
 http://localhost:5678
 ```
 
-Import:
+Import the supplied workflow:
 
 ```text
 automation/sentinel_detection_automation.json
 ```
 
-Attach your own AbuseIPDB credentials to the reputation-check node and publish the workflow.
+Create your own AbuseIPDB credential inside n8n, attach it to the reputation-check node, and publish the workflow.
 
-The workflow expects FastAPI to be available locally at:
-
-```text
-http://127.0.0.1:8000
-```
+The exported workflow contains the workflow structure and credential reference only. It does not include the repository owner's AbuseIPDB API key.
 
 ### 6. Start FastAPI
 
-From `backend`:
-
 ```powershell
+cd backend
 .\venv\Scripts\Activate.ps1
 uvicorn app.main:app --reload
 ```
@@ -243,7 +256,7 @@ http://127.0.0.1:8000/docs
 
 ### 7. Start the dashboard
 
-In a second terminal:
+In another terminal:
 
 ```powershell
 cd dashboard
@@ -257,9 +270,11 @@ Open:
 http://localhost:3000
 ```
 
-### 8. Start the live Collector
+### 8. Configure and start the Collector
 
-Run the Collector from an Administrator PowerShell window so Npcap can capture traffic:
+The Collector uses the active Windows network interface and local IP configuration. If your machine differs from the development environment, update those values in `collector/collector.py` first.
+
+Run the Collector from an Administrator PowerShell window:
 
 ```powershell
 cd backend
@@ -268,16 +283,34 @@ cd ..\collector
 python collector.py
 ```
 
-The Collector submits completed flows to Sentinel automatically.
+Npcap must be installed for live packet capture.
 
-If your Windows interface name or local IP differs from the development machine, update the Collector configuration before running it.
+### 9. Use Sentinel
+
+With PostgreSQL, FastAPI, n8n, the dashboard, and Collector running:
+
+```text
+Normal traffic
+→ Collector
+→ XGBoost
+→ PostgreSQL
+→ Dashboard
+
+ATTACK detection
+→ n8n
+→ AbuseIPDB
+→ Gemini
+→ Analyst Queue
+→ Human decision
+→ Simulated response when approved
+```
 
 ## Safety Model
 
 Sentinel keeps response execution controlled:
 
-- BENIGN detections do not enter the attack automation pipeline.
-- LLM analysis requires threat-intelligence enrichment.
+- BENIGN detections do not enter the ATTACK automation pipeline.
+- LLM analysis follows threat-intelligence enrichment.
 - Response execution requires explicit analyst approval.
 - Response actions are restricted to an allowlist.
 - Firewall blocking remains simulated rather than disruptive.
@@ -293,7 +326,7 @@ The final controlled end-to-end validation completed with:
 0 FAIL
 ```
 
-This covered the full path from genuine CIC-IDS2017 attack inference through persistence, n8n, AbuseIPDB, Gemini analysis, Analyst Queue review, simulated response execution, and retry protection.
+The validated path covers genuine CIC-IDS2017 attack inference, persistence, n8n automation, AbuseIPDB enrichment, Gemini analysis, Analyst Queue routing, human approval, simulated response execution, failure recovery, and retry protection.
 
 ## Dataset
 
@@ -307,4 +340,4 @@ Dataset/Dataset_README.md
 
 ## License
 
-A license has not yet been selected.
+**UshaLabs**
